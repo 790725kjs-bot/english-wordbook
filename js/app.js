@@ -579,7 +579,7 @@
     if (global.STARTER_PACK) { apply(); return; }
     packLoading = true;
     var s = document.createElement('script');
-    s.src = 'js/pack.js';
+    s.src = (global.APP_BASE || '') + 'js/pack.js';
     s.onload = function () { packLoading = false; apply(); };
     s.onerror = function () { packLoading = false; toast('단어팩 파일을 찾지 못했습니다'); };
     document.head.appendChild(s);

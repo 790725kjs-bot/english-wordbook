@@ -8,7 +8,13 @@
 (function (global) {
   'use strict';
 
-  var KEY = 'engvoc.v1';
+  /**
+   * 저장 공간 이름.
+   * 브라우저 저장소는 도메인 단위로 공유되므로, 같은 주소에 여러 사람의 단어장을
+   * 올릴 때 서로 섞이지 않도록 페이지마다 다른 이름을 쓴다.
+   * (index.html 에서 window.APP_PROFILE 을 지정한다. 지정이 없으면 기존 것 그대로)
+   */
+  var KEY = global.APP_PROFILE ? 'engvoc.' + global.APP_PROFILE + '.v1' : 'engvoc.v1';
   var CACHE_MAX = 400;      // 사전 응답 캐시 최대 개수
   var RECENT_MAX = 24;      // 최근 검색어 개수
   var TRANS_MAX = 1200;     // 번역 캐시 최대 개수

@@ -10,9 +10,17 @@
 
 ## 🔗 접속 주소
 
-**https://790725kjs-bot.github.io/english-wordbook/**
+| 사용자 | 주소 |
+|---|---|
+| 내 단어장 (보라) | **https://790725kjs-bot.github.io/english-wordbook/** |
+| 하람이의 단어장 (분홍) | **https://790725kjs-bot.github.io/english-wordbook/haram/** |
 
 PC를 켜 두지 않아도 되고, 홈 화면에 추가하면 지하철에서도 오프라인으로 동작합니다.
+
+두 단어장은 **기능이 완전히 같고 저장 공간만 분리**되어 있습니다.
+브라우저 저장소는 도메인 단위로 공유되므로, 페이지마다 `window.APP_PROFILE` 을 지정해
+저장 키(`engvoc.v1` / `engvoc.haram.v1`)를 나눕니다. 서비스워커 캐시 이름도 각각 다릅니다.
+공용 `css/`, `js/` 를 함께 쓰므로 한 번 고치면 두 단어장에 모두 반영됩니다.
 
 ---
 
