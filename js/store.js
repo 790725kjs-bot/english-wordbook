@@ -33,7 +33,8 @@
     return {
       version: 1,
       words: {},      // id -> word object
-      order: [],      // 즐겨찾기 추가 순서
+      order: [],      // 즐겨찾기 추가 순서 (별표 켜진 단어)
+      archive: [],    // 보관함 — 별표를 껐지만 받아 둔 자료와 기록은 그대로 남긴다
       queue: [],      // 암기 출제 순서
       folders: [DEFAULT_FOLDER],
       recent: [],     // 최근 검색어 (문자열)
@@ -56,15 +57,27 @@
       state.settings = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
       // 무결성 보정
       if (!state.words || typeof state.words !== 'object') state.words = {};
-      ['order', 'queue', 'recent', 'cacheOrder', 'transOrder', 'folders'].forEach(function (k) {
+      ['order', 'archive', 'queue', 'recent', 'cacheOrder', 'transOrder', 'folders'].forEach(function (k) {
         if (!Array.isArray(state[k])) state[k] = [];
       });
       if (state.folders.indexOf(DEFAULT_FOLDER) === -1) state.folders.unshift(DEFAULT_FOLDER);
       state.order = state.order.filter(function (id) { return !!state.words[id]; });
-      state.queue = state.queue.filter(function (id) { return !!state.words[id]; });
+      state.archive = state.archive.filter(function (id) {
+        return !!state.words[id] && state.order.indexOf(id) === -1;
+      });
+      // 보관함 단어는 출제 대기열에서 빠진다
+      state.queue = state.queue.filter(function (id) {
+        return !!state.words[id] && state.archive.indexOf(id) === -1;
+      });
       // 즐겨찾기에 있는데 큐에 없는 단어 보충
       state.order.forEach(function (id) {
         if (state.queue.indexOf(id) === -1) state.queue.push(id);
+      });
+      // 어느 목록에도 없는 단어가 생기면 잃어버리지 않도록 보관함으로
+      Object.keys(state.words).forEach(function (id) {
+        if (state.order.indexOf(id) === -1 && state.archive.indexOf(id) === -1) {
+          state.archive.push(id);
+        }
       });
     } catch (e) {
       state = blank();
@@ -139,14 +152,63 @@
     return w;
   }
 
+  /** 완전 삭제 — 받아 둔 자료와 기록까지 모두 지운다 */
   function removeFav(id) {
     id = normId(id);
+    [state.order, state.queue, state.archive].forEach(function (arr) {
+      var i = arr.indexOf(id);
+      if (i !== -1) arr.splice(i, 1);
+    });
+    delete state.words[id];
+    save();
+  }
+
+  /**
+   * 보관함으로 보내기 — 별표만 끄고 뜻·예문·암기 기록은 그대로 남긴다.
+   * 나중에 복원하면 다시 내려받을 필요가 없다.
+   */
+  function archiveFav(id) {
+    id = normId(id);
+    var w = state.words[id];
+    if (!w) return;
     var i = state.order.indexOf(id);
     if (i !== -1) state.order.splice(i, 1);
     var q = state.queue.indexOf(id);
     if (q !== -1) state.queue.splice(q, 1);
-    delete state.words[id];
+    if (state.archive.indexOf(id) === -1) state.archive.unshift(id);
+    w.archivedAt = Date.now();
     save();
+  }
+
+  /** 보관함에서 단어장으로 되돌리기 (원래의 추가 순서 자리로) */
+  function restoreFav(id) {
+    id = normId(id);
+    var w = state.words[id];
+    if (!w) return;
+    var a = state.archive.indexOf(id);
+    if (a !== -1) state.archive.splice(a, 1);
+
+    if (state.order.indexOf(id) === -1) {
+      var at = w.addedAt || 0;
+      var pos = state.order.length;
+      for (var k = 0; k < state.order.length; k++) {
+        var other = state.words[state.order[k]];
+        if (other && (other.addedAt || 0) > at) { pos = k; break; }
+      }
+      state.order.splice(pos, 0, id);
+    }
+    if (state.queue.indexOf(id) === -1) state.queue.unshift(id);
+    delete w.archivedAt;
+    save();
+  }
+
+  function isArchived(id) { return state.archive.indexOf(normId(id)) !== -1; }
+
+  /** 보관함 목록 — 최근에 보관한 것부터 */
+  function archived() {
+    return state.archive.map(function (id) { return state.words[id]; })
+      .filter(Boolean)
+      .sort(function (a, b) { return (b.archivedAt || 0) - (a.archivedAt || 0); });
   }
 
   function update(id, patch) {
@@ -309,6 +371,7 @@
       exportedAt: new Date().toISOString(),
       words: state.words,
       order: state.order,
+      archive: state.archive,
       queue: state.queue,
       folders: state.folders,
       settings: state.settings,
@@ -353,6 +416,14 @@
         added++;
       }
     });
+    (data.archive || []).forEach(function (id) {
+      var w = data.words[id];
+      if (!w || state.words[id]) return;
+      w.stats = Object.assign(newStats(), w.stats || {});
+      state.words[id] = w;
+      state.archive.push(id);
+      added++;
+    });
     if (Array.isArray(data.folders)) data.folders.forEach(addFolder);
     if (data.settings) state.settings = Object.assign({}, state.settings, data.settings);
     saveNow();
@@ -384,6 +455,10 @@
     isFav: isFav,
     addFav: addFav,
     removeFav: removeFav,
+    archiveFav: archiveFav,
+    restoreFav: restoreFav,
+    isArchived: isArchived,
+    archived: archived,
     update: update,
     favorites: favorites,
     folders: folders,

@@ -14,6 +14,7 @@
   var listFolder = '*';       // 단어장 화면에서 보고 있는 폴더
   var reviewFolder = '*';     // 암기 범위
   var maskMeanings = false;   // 단어장에서 뜻 가리기
+  var showArchive = false;    // 단어장 대신 보관함 보기
   var sheetMode = 'entry';    // entry | bulk
 
   var MODE_NAME = { flash: '플래시카드', mcq: '객관식', spell: '스펠링', listen: '연속 듣기' };
@@ -60,10 +61,12 @@
   function entryHtml(entry, opts) {
     opts = opts || {};
     var saved = opts.saved || Store.get(entry.word);
-    var fav = !!saved;
-    var mine = fav ? (saved.myMeaning || '') : pendingMeaning;
-    var exKo = (fav && saved.exKo) || {};
-    var defKo = (fav && saved.defKo) || {};
+    var known = !!saved;                     // 저장된 자료가 있는가 (보관함 포함)
+    var fav = Store.isFav(entry.word);       // 별표가 켜져 있는가
+    var archived = known && !fav;
+    var mine = known ? (saved.myMeaning || '') : pendingMeaning;
+    var exKo = (known && saved.exKo) || {};
+    var defKo = (known && saved.defKo) || {};
     var w = esc(entry.word);
 
     var h = '<div class="entry" data-word="' + w + '">';
@@ -78,10 +81,14 @@
          (fav ? '★' : '☆') + '</button>';
     h += '</div></div>';
 
+    if (archived) {
+      h += '<div class="archived-note">보관함에 있는 단어입니다. ☆ 를 누르면 단어장으로 되돌아갑니다.</div>';
+    }
+
     h += '<div class="mymean"><div class="mymean-label">내 뜻 · 탭해서 수정</div>';
     h += '<div class="mymean-text" contenteditable="true" data-act="mymean">' + esc(mine) + '</div></div>';
 
-    if (fav) {
+    if (known) {
       var folders = Store.folders();
       h += '<div class="pos-block" style="display:flex;align-items:center;gap:8px">';
       h += '<span class="section-title" style="margin:0">폴더</span>';
@@ -131,7 +138,7 @@
     }
 
     // 사전 정의에 예문이 없어 따로 보충해 온 예문
-    if (fav && saved.examples && saved.examples.length) {
+    if (known && saved.examples && saved.examples.length) {
       h += '<div class="pos-block">';
       h += '<span class="pos-name">예문' +
            (saved.examplesFrom ? ' · 관련 단어 ' + esc(saved.examplesFrom) : '') + '</span>';
@@ -141,7 +148,7 @@
       h += '</div>';
     }
 
-    if (fav && opts.showNote !== false) {
+    if (known && opts.showNote !== false) {
       var st = saved.stats || {};
       var c = Review.conf();
       h += '<div class="entry-note"><div class="section-title">메모</div>';
@@ -149,7 +156,7 @@
            esc(saved.note || '') + '</textarea>';
       h += '<div class="hint" style="margin-top:8px">출제 ' + (st.seen || 0) + '회 · 즉답 ' +
            (st.fast || 0) + '회 · 연속 ' + Review.streakDots(st.fastStreak || 0, c.target) + '</div>';
-      h += '<div class="btn-row"><button class="btn btn-danger-ghost" data-act="remove">단어장에서 삭제</button></div>';
+      h += '<div class="btn-row"><button class="btn btn-danger-ghost" data-act="remove">완전히 삭제 (자료·기록까지)</button></div>';
       h += '</div>';
     }
 
@@ -596,9 +603,23 @@
 
   function renderFavList() {
     var favs = Store.favorites();
+    var arch = Store.archived();
     var target = Review.conf().target;
-    $('#favCount').textContent = favs.length;
-    renderFolderChips('#listFolders', listFolder, 'listFolder');
+
+    // 보관함 버튼
+    var abtn = $('#btnArchive');
+    abtn.classList.toggle('on', showArchive);
+    abtn.textContent = showArchive ? '단어장' : '보관함' + (arch.length ? ' ' + arch.length : '');
+
+    $('#favCount').textContent = showArchive ? arch.length : favs.length;
+    $('.count-label').textContent = showArchive ? '개 보관 중' : '개 저장됨';
+    $('#listFolders').hidden = showArchive;
+    if (!showArchive) renderFolderChips('#listFolders', listFolder, 'listFolder');
+
+    if (showArchive) {
+      renderArchiveList(arch);
+      return;
+    }
 
     var q = $('#filterInput').value.trim().toLowerCase();
     var sort = $('#sortSelect').value;
@@ -637,6 +658,43 @@
         '<span class="wi-mean' + (maskMeanings ? ' masked' : '') + '">' +
           esc(Review.meaningLabel(w) || '뜻을 입력해 주세요') + '</span></span>' +
         '<span class="wi-badge ' + cls + '">' + badge + '</span></div>';
+    }).join('');
+  }
+
+  /** 보관함 목록 — 최근에 보관한 것부터, 지난 기간과 함께 */
+  function renderArchiveList(list) {
+    var q = $('#filterInput').value.trim().toLowerCase();
+    var all = list;
+    if (q) {
+      list = list.filter(function (w) {
+        return w.word.toLowerCase().indexOf(q) !== -1 ||
+               (w.myMeaning || '').toLowerCase().indexOf(q) !== -1;
+      });
+    }
+
+    $('#favEmpty').hidden = all.length > 0;
+    $('#btnMask').classList.toggle('on', maskMeanings);
+    $('#btnMask').textContent = maskMeanings ? '뜻 보이기' : '뜻 가리기';
+
+    if (!list.length) {
+      $('#favList').innerHTML = all.length
+        ? '<div class="empty">검색 결과가 없습니다.</div>'
+        : '';
+      return;
+    }
+
+    $('#favList').innerHTML = list.map(function (w) {
+      var days = w.archivedAt ? Math.floor((Date.now() - w.archivedAt) / 86400000) : null;
+      var ago = days === null ? '보관됨' : (days === 0 ? '오늘' : days + '일 전');
+      var st = w.stats || {};
+      return '<div class="word-item" data-act="open" data-word="' + esc(w.id) + '">' +
+        '<span class="wi-main"><span class="wi-word">' + esc(w.word) + '</span>' +
+        '<span class="wi-mean' + (maskMeanings ? ' masked' : '') + '">' +
+          esc(Review.meaningLabel(w) || '뜻 없음') + '</span></span>' +
+        '<span class="wi-side">' +
+          '<span class="wi-badge archived">' + esc(ago) + '</span>' +
+          (st.seen ? '<span class="wi-sub">' + st.seen + '회 학습</span>' : '') +
+        '</span></div>';
     }).join('');
   }
 
@@ -1161,13 +1219,29 @@
         var entryEl = el.closest('.entry');
         var word = entryEl.dataset.word;
         if (Store.isFav(word)) {
-          Store.removeFav(word);
-          el.classList.remove('on');
-          el.textContent = '☆';
-          toast('단어장에서 뺐습니다');
-          var note = entryEl.querySelector('.entry-note');
-          if (note) note.remove();
-        } else {
+          // 지우지 않고 보관함으로. 받아 둔 뜻·예문과 암기 기록은 그대로 남는다.
+          Store.archiveFav(word);
+          toast('보관함으로 옮겼습니다 · 자료와 기록은 그대로 남아요');
+          renderFavList();
+          renderReviewIntro();
+          if (!$('#sheet').hidden) openSheet(Store.normId(word));
+          else if (lastEntry && Store.normId(lastEntry.word) === Store.normId(word)) {
+            $('#searchResult').innerHTML = entryHtml(lastEntry, {});
+          }
+          return;
+        }
+        if (Store.isArchived(word)) {
+          Store.restoreFav(word);
+          toast('단어장으로 되돌렸습니다');
+          renderFavList();
+          renderReviewIntro();
+          if (!$('#sheet').hidden) openSheet(Store.normId(word));
+          else if (lastEntry && Store.normId(lastEntry.word) === Store.normId(word)) {
+            $('#searchResult').innerHTML = entryHtml(lastEntry, {});
+          }
+          return;
+        }
+        {
           var mineEl = entryEl.querySelector('.mymean-text');
           var mine = mineEl ? mineEl.textContent.trim() : '';
           var src = (lastEntry && Store.normId(lastEntry.word) === Store.normId(word))
@@ -1362,6 +1436,12 @@
     /* 단어장 */
     $('#sortSelect').addEventListener('change', renderFavList);
     $('#filterInput').addEventListener('input', renderFavList);
+    $('#btnArchive').addEventListener('click', function () {
+      showArchive = !showArchive;
+      $('#filterInput').value = '';
+      renderFavList();
+      $('#main').scrollTop = 0;
+    });
     $('#btnMask').addEventListener('click', function () {
       maskMeanings = !maskMeanings;
       renderFavList();
