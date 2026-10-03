@@ -274,12 +274,12 @@
    * 저장한 단어 전부의 한글 뜻·예문을 미리 받아 둔다 (오프라인 대비).
    * 번역 서버에 부담을 주지 않도록 한 단어씩 순서대로 처리한다.
    */
-  var filling = false;
-  function fillAllKorean() {
-    if (filling) return;
-    if (!navigator.onLine) { toast('인터넷에 연결된 상태에서 눌러 주세요'); return; }
+  var AUTO_BATCH = 40;      // 자동으로는 한 번에 이만큼까지만 (번역 한도 배려)
+  var fillJob = null;
 
-    var list = Store.favorites().filter(function (w) {
+  /** 아직 한글 뜻이나 예문이 비어 있는 단어들 */
+  function wordsNeedingKorean() {
+    return Store.favorites().filter(function (w) {
       var needDef = (w.meanings || []).some(function (m) {
         return m.defs.some(function (d) { return !(w.defKo && w.defKo[d.def]); });
       });
@@ -287,32 +287,73 @@
       var needExKo = allExamples(w).slice(0, 2).some(function (t) { return !(w.exKo && w.exKo[t]); });
       return needDef || needEx || needExKo;
     });
+  }
 
+  function setFillStatus(msg) {
+    var el = $('#fillKoStatus');
+    if (el) el.textContent = msg;
+  }
+
+  /**
+   * 한글 뜻·예문 채우기.
+   * manual=true 면 끝까지, 아니면 조금씩 천천히 (앱을 열어 둔 동안 알아서 진행).
+   */
+  function startFill(manual) {
+    if (!navigator.onLine) {
+      if (manual) toast('인터넷에 연결된 상태에서 눌러 주세요');
+      return;
+    }
+    if (fillJob) {                       // 이미 돌고 있으면 범위만 넓힌다
+      if (manual) { fillJob.manual = true; fillJob.list = wordsNeedingKorean(); }
+      return;
+    }
+
+    var list = wordsNeedingKorean();
+    if (!list.length) {
+      if (manual) setFillStatus('이미 모두 채워져 있습니다.');
+      return;
+    }
+    if (!manual) {
+      var conn = navigator.connection;
+      if (conn && conn.saveData) return;              // 데이터 절약 모드면 건드리지 않는다
+      if (!Store.settings().autoFill) return;
+      list = list.slice(0, AUTO_BATCH);
+    }
+
+    fillJob = { list: list, i: 0, updated: 0, manual: !!manual };
     var btn = $('#btnFillKo');
-    var stat = $('#fillKoStatus');
-    if (!list.length) { stat.textContent = '이미 모두 채워져 있습니다.'; return; }
-
-    filling = true;
-    btn.disabled = true;
-    var i = 0, updated = 0;
+    if (btn) btn.disabled = true;
 
     (function step() {
-      if (i >= list.length) {
-        filling = false;
-        btn.disabled = false;
-        stat.textContent = '완료 — ' + updated + '개 단어를 채웠습니다.';
-        toast('오프라인 준비 완료 (' + updated + '개)');
-        renderFavList();
+      if (!fillJob) return;
+      if (!navigator.onLine) { finish('연결이 끊겨 멈췄습니다.'); return; }
+      if (fillJob.i >= fillJob.list.length) {
+        var left = wordsNeedingKorean().length;
+        finish(left ? '채움 ' + fillJob.updated + '개 · 남은 단어 ' + left + '개 (앱을 열어 두면 계속됩니다)'
+                    : '완료 — 모든 단어가 준비됐습니다.');
         return;
       }
-      var w = list[i++];
-      stat.textContent = '채우는 중… ' + i + ' / ' + list.length + '  (' + w.word + ')';
+      var w = fillJob.list[fillJob.i++];
+      setFillStatus('채우는 중… ' + fillJob.i + ' / ' + fillJob.list.length + '  (' + w.word + ')');
       ensureExamples(w.id, function (changed) {
-        if (changed) updated++;
-        setTimeout(step, 250);
+        if (changed) fillJob.updated++;
+        setTimeout(step, fillJob.manual ? 250 : 1500);   // 자동일 때는 천천히
       });
     })();
+
+    function finish(msg) {
+      var job = fillJob;
+      fillJob = null;
+      if (btn) btn.disabled = false;
+      setFillStatus(msg);
+      if (job && job.updated) {
+        renderFavList();
+        if (job.manual) toast('오프라인 준비 완료 (' + job.updated + '개)');
+      }
+    }
   }
+
+  function fillAllKorean() { startFill(true); }
 
   /* ================= 찾기 ================= */
 
@@ -1011,6 +1052,7 @@
     $('#setStreakVal').textContent = s.targetStreak + '회';
     $('#setAutoTrans').checked = !!s.autoTranslate;
     $('#setExTrans').checked = !!s.exampleTranslate;
+    $('#setAutoFill').checked = !!s.autoFill;
     $('#setRate').value = s.ttsRate;
     $('#setRateVal').textContent = Number(s.ttsRate).toFixed(1) + 'x';
     $('#setListenGap').value = s.listenGap;
@@ -1375,6 +1417,10 @@
     $('#setExTrans').addEventListener('change', function () {
       Store.setSetting('exampleTranslate', this.checked);
     });
+    $('#setAutoFill').addEventListener('change', function () {
+      Store.setSetting('autoFill', this.checked);
+      if (this.checked) startFill(false);
+    });
     $('#setRate').addEventListener('input', function () {
       Store.setSetting('ttsRate', Number(this.value));
       $('#setRateVal').textContent = Number(this.value).toFixed(1) + 'x';
@@ -1432,7 +1478,11 @@
     document.addEventListener('focusout', onEditBlur);
     document.addEventListener('change', onChange);
 
-    global.addEventListener('online', function () { updateNetBadge(); enrich(); });
+    global.addEventListener('online', function () {
+      updateNetBadge();
+      enrich();
+      setTimeout(function () { startFill(false); }, 3000);
+    });
     global.addEventListener('offline', updateNetBadge);
     global.addEventListener('pagehide', function () { Api.stopSpeak(); Store.saveNow(); });
 
@@ -1442,6 +1492,10 @@
 
     // 시작 후 잠시 뒤, 사전 정보가 빈 단어를 조용히 채운다
     setTimeout(enrich, 2500);
+    // 이어서 한글 뜻·예문도 천천히 채워 둔다 (오프라인 대비)
+    setTimeout(function () { startFill(false); }, 8000);
+    // 앱을 열어 둔 동안 남은 단어를 이어서 처리
+    setInterval(function () { startFill(false); }, 3 * 60 * 1000);
   }
 
   global.App = {

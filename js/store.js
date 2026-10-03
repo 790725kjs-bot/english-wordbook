@@ -18,6 +18,7 @@
     targetStreak: 4,     // 연속 즉답 4회 → 뒤로 밀기
     autoTranslate: true, // 한글 뜻 자동 번역
     exampleTranslate: true, // 예문의 한글 뜻도 함께 저장
+    autoFill: true,      // 인터넷에 연결돼 있으면 한글 뜻·예문을 알아서 채움
     ttsRate: 0.9,        // 발음 속도
     listenGap: 1500,     // 연속 듣기 카드 간격(ms)
     listenExample: true  // 연속 듣기에 예문 포함

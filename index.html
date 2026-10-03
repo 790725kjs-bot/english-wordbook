@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="css/styles.css?v=8">
+<link rel="stylesheet" href="css/styles.css?v=9">
 </head>
 <body>
 
@@ -217,10 +217,15 @@
 
     <div class="setting-group">
       <h3 class="section-title">오프라인 준비</h3>
-      <p class="hint">저장한 단어의 <b>한글 뜻과 예문</b>을 미리 모두 받아 둡니다.
-        와이파이가 있을 때 한 번 눌러 두면, 지하철처럼 연결이 끊긴 곳에서도 그대로 볼 수 있습니다.</p>
+      <p class="hint">저장한 단어의 <b>한글 뜻과 예문</b>을 미리 받아 두면,
+        지하철처럼 연결이 끊긴 곳에서도 그대로 볼 수 있습니다.
+        인터넷에 연결돼 있으면 앱이 <b>알아서 조금씩 채웁니다.</b></p>
+      <label class="setting-row toggle-row">
+        <span>연결돼 있을 때 자동으로 채우기</span>
+        <input id="setAutoFill" type="checkbox" class="switch">
+      </label>
       <div class="btn-row">
-        <button id="btnFillKo" class="btn btn-ghost">한글 뜻·예문 모두 채우기</button>
+        <button id="btnFillKo" class="btn btn-ghost">지금 바로 전부 채우기</button>
       </div>
       <p class="hint" id="fillKoStatus"></p>
     </div>
@@ -272,9 +277,9 @@
   <button class="tab" data-view="settings"><span class="tab-icon">⚙</span><span>설정</span></button>
 </nav>
 
-<script src="js/store.js?v=8"></script>
-<script src="js/api.js?v=8"></script>
-<script src="js/review.js?v=8"></script>
-<script src="js/app.js?v=8"></script>
+<script src="js/store.js?v=9"></script>
+<script src="js/api.js?v=9"></script>
+<script src="js/review.js?v=9"></script>
+<script src="js/app.js?v=9"></script>
 </body>
 </html>
