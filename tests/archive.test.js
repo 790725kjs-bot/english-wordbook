@@ -42,6 +42,7 @@ for (const f of ['js/store.js', 'js/api.js', 'js/review.js', 'js/app.js']) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const $ = s => doc.querySelector(s), $$ = s => [...doc.querySelectorAll(s)];
 const click = el => el.dispatchEvent(new window.Event('click', { bubbles: true }));
+const renderList = () => window.App.refresh();
 
 let pass = 0, fail = 0;
 const ok = (n, c, e) => {
@@ -83,6 +84,31 @@ async function main() {
   ok('보관 날짜 표시', /오늘|일 전/.test($('#favList .wi-badge').textContent), $('#favList .wi-badge').textContent);
   ok('학습 횟수 표시', /7회/.test($('#favList .wi-sub').textContent), $('#favList .wi-sub').textContent);
   ok('폴더 칩 숨김', $('#listFolders').hidden === true);
+
+  console.log('\n[3-b] 보관 순서와 행 별표');
+  // alpha 도 보관해서 2개로 만든 뒤 순서를 확인한다
+  Store.archiveFav('alpha');
+  Store.get('alpha').archivedAt = Date.now() + 5000;   // alpha 를 더 나중에 보관한 것으로
+  renderList();
+  await sleep(80);
+  const rows = $$('#favList .word-item').map(r => r.dataset.word);
+  ok('오래 보관한 것이 위', rows[0] === 'bravo' && rows[1] === 'alpha', rows);
+  ok('순번 표시', $('#favList .wi-index').textContent === '1', $('#favList .wi-index').textContent);
+  ok('행마다 별 버튼', $$('#favList .row-star').length === 2, $$('#favList .row-star').length);
+  ok('별은 행 맨 오른쪽', (() => {
+    const kids = [...$('#favList .word-item').children];
+    return kids[kids.length - 1].classList.contains('row-star');
+  })());
+
+  console.log('\n[3-c] 목록에서 바로 별표 → 단어장 복귀');
+  const alphaStar = $$('#favList .row-star').find(b => b.dataset.word === 'alpha');
+  click(alphaStar);
+  await sleep(120);
+  ok('단어장으로 복귀', Store.isFav('alpha'));
+  ok('보관함 목록에서 사라짐', $$('#favList .word-item').length === 1,
+     $$('#favList .word-item').map(r => r.dataset.word));
+  ok('상세를 열지 않고 처리', $('#sheet').hidden === true);
+  ok('받아 둔 자료 그대로', !!(Store.get('alpha').defKo && Object.keys(Store.get('alpha').defKo).length));
 
   console.log('\n[4] 되돌리기');
   click($('#favList .word-item'));

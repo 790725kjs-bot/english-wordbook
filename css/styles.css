@@ -311,8 +311,10 @@ body {
   font-size: 12px; font-weight: 700; color: var(--text-3);
 }
 .wi-main { flex: 1; min-width: 0; }
-.wi-word { font-size: 16.5px; font-weight: 700; word-break: break-word; }
+/* 단어와 뜻은 각각 줄을 차지해야 한다 (inline 이면 "word뜻" 처럼 붙어 보인다) */
+.wi-word { display: block; font-size: 16.5px; font-weight: 700; word-break: break-word; }
 .wi-mean {
+  display: block;
   font-size: 13.5px; color: var(--text-2); margin-top: 1px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -325,6 +327,19 @@ body {
 .wi-badge.learning { background: var(--primary-soft); color: var(--primary); }
 
 .wi-side { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+
+/* 목록 행 끝의 별 — 바로 다시 암기 목록으로 되돌리는 버튼 */
+.row-star {
+  flex: 0 0 auto;
+  min-width: 46px; height: 46px;
+  font-size: 24px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text-3);
+  margin-left: 2px;
+}
+.row-star:active { background: var(--star); color: #fff; border-color: var(--star); }
 .wi-sub { font-size: 11px; color: var(--text-3); }
 .wi-badge.archived { background: var(--surface-2); color: var(--text-2); }
 

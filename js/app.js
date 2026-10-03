@@ -683,18 +683,22 @@
       return;
     }
 
-    $('#favList').innerHTML = list.map(function (w) {
+    $('#favList').innerHTML = list.map(function (w, idx) {
       var days = w.archivedAt ? Math.floor((Date.now() - w.archivedAt) / 86400000) : null;
       var ago = days === null ? '보관됨' : (days === 0 ? '오늘' : days + '일 전');
       var st = w.stats || {};
       return '<div class="word-item" data-act="open" data-word="' + esc(w.id) + '">' +
+        '<span class="wi-index">' + (idx + 1) + '</span>' +
         '<span class="wi-main"><span class="wi-word">' + esc(w.word) + '</span>' +
         '<span class="wi-mean' + (maskMeanings ? ' masked' : '') + '">' +
           esc(Review.meaningLabel(w) || '뜻 없음') + '</span></span>' +
         '<span class="wi-side">' +
           '<span class="wi-badge archived">' + esc(ago) + '</span>' +
           (st.seen ? '<span class="wi-sub">' + st.seen + '회 학습</span>' : '') +
-        '</span></div>';
+        '</span>' +
+        '<button class="star-btn row-star" data-act="star" data-word="' + esc(w.id) +
+          '" aria-label="단어장으로 되돌리기" title="다시 암기하기">☆</button>' +
+      '</div>';
     }).join('');
   }
 
@@ -1216,8 +1220,10 @@
       }
 
       case 'star': {
+        // 상세 카드의 별, 목록 행 끝의 별 둘 다 처리한다
         var entryEl = el.closest('.entry');
-        var word = entryEl.dataset.word;
+        var word = el.dataset.word || (entryEl && entryEl.dataset.word);
+        if (!word) return;
         if (Store.isFav(word)) {
           // 지우지 않고 보관함으로. 받아 둔 뜻·예문과 암기 기록은 그대로 남는다.
           Store.archiveFav(word);

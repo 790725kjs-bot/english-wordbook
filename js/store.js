@@ -204,11 +204,11 @@
 
   function isArchived(id) { return state.archive.indexOf(normId(id)) !== -1; }
 
-  /** 보관함 목록 — 최근에 보관한 것부터 */
+  /** 보관함 목록 — 오래전에 보관한 것이 위로 (알파벳순 아님) */
   function archived() {
     return state.archive.map(function (id) { return state.words[id]; })
       .filter(Boolean)
-      .sort(function (a, b) { return (b.archivedAt || 0) - (a.archivedAt || 0); });
+      .sort(function (a, b) { return (a.archivedAt || 0) - (b.archivedAt || 0); });
   }
 
   function update(id, patch) {
