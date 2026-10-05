@@ -151,7 +151,7 @@
       return {
         pos: pos,
         posKo: POS_KO[pos] || '',
-        defs: withEx.concat(noEx).slice(0, 6)
+        defs: withEx.concat(noEx).slice(0, 8)
       };
     }).filter(function (m) { return m.defs.length; });
 
@@ -239,7 +239,7 @@
           defs.push({ def: text, example: ex, synonyms: [] });
         });
         if (defs.length) {
-          meanings.push({ pos: pos, posKo: POS_KO[pos] || '', defs: defs.slice(0, 6) });
+          meanings.push({ pos: pos, posKo: POS_KO[pos] || '', defs: defs.slice(0, 8) });
         }
       });
       if (!meanings.length) return { notFound: true };
@@ -266,21 +266,28 @@
       if (String(hit.word).toLowerCase() !== word.toLowerCase()) return { notFound: true };
       if (!hit.defs || !hit.defs.length) return { notFound: true };
 
-      var posMap = {}, order = [];
-      hit.defs.slice(0, 8).forEach(function (d) {
+      // Datamuse 는 많이 쓰이는 뜻부터 돌려준다. 그 순서를 rank 로 남겨
+      // 뜻 정렬과 '자주 쓰임' 표시의 기준으로 삼는다.
+      var posMap = {}, order = [], rank = 0;
+      hit.defs.slice(0, 14).forEach(function (d) {
         var parts = String(d).split('\t');
         var pos = DM_POS[parts[0]] || 'etc';
         var text = (parts[1] || parts[0] || '').trim();
         if (!text) return;
         if (!posMap[pos]) { posMap[pos] = []; order.push(pos); }
-        posMap[pos].push({ def: text, example: '', synonyms: [] });
+        posMap[pos].push({ def: text, example: '', synonyms: [], rank: rank++ });
       });
       var meanings = order.map(function (pos) {
-        return { pos: pos, posKo: POS_KO[pos] || '', defs: posMap[pos].slice(0, 6) };
+        return { pos: pos, posKo: POS_KO[pos] || '', defs: posMap[pos].slice(0, 8) };
       });
       if (!meanings.length) return { notFound: true };
 
-      return { entry: {
+      // tags 는 사용 빈도가 높은 품사부터 들어 있다 (예: ['v','n'])
+      var posOrder = (hit.tags || [])
+        .filter(function (t) { return DM_POS[t]; })
+        .map(function (t) { return DM_POS[t]; });
+
+      return { posOrder: posOrder, entry: {
         word: hit.word, phonetic: '', audio: '', meanings: meanings,
         sourceUrl: '', source: 'Datamuse', fetchedAt: Date.now()
       } };
@@ -397,18 +404,123 @@
       }).catch(function () { return []; });
   }
 
-  /** 사전 세 곳을 차례로 시도한다 */
+  /* ---------------------------------------------------------
+     여러 사전의 뜻을 합치고, 자주 쓰이는 뜻을 표시한다
+     --------------------------------------------------------- */
+
+  /** 같은 뜻인지 비교하기 위한 정규화 (품사 꼬리표·구두점·대소문자 무시) */
+  function defKey(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, ' ')      // (transitive) 같은 꼬리표 제거
+      .replace(/[^a-z\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 70);
+  }
+
+  /** extra 의 뜻 중 base 에 없는 것을 더한다. 겹치는 뜻은 '여러 사전이 함께 쓴 뜻'으로 표시 */
+  function mergeEntries(base, extra) {
+    if (!extra || !extra.meanings) return base;
+
+    extra.meanings.forEach(function (em) {
+      var target = null;
+      for (var i = 0; i < base.meanings.length; i++) {
+        if (base.meanings[i].pos === em.pos) { target = base.meanings[i]; break; }
+      }
+      if (!target) {
+        target = { pos: em.pos, posKo: em.posKo, defs: [] };
+        base.meanings.push(target);
+      }
+      em.defs.forEach(function (ed) {
+        var key = defKey(ed.def);
+        var hit = null;
+        for (var j = 0; j < target.defs.length; j++) {
+          if (defKey(target.defs[j].def) === key) { hit = target.defs[j]; break; }
+        }
+        if (hit) {
+          if (!hit.example && ed.example) hit.example = ed.example;
+          // 빈도 순위는 Datamuse 쪽 값을 받아 둔다
+          if (typeof ed.rank === 'number' && typeof hit.rank !== 'number') hit.rank = ed.rank;
+        } else {
+          target.defs.push(ed);
+        }
+      });
+    });
+    return base;
+  }
+
+  // 옛말·속어·전문 분야 꼬리표가 붙은 뜻은 '자주 쓰임'에서 제외한다
+  var NARROW = /^\s*\((?:[^)]*\b(?:archaic|obsolete|rare|dated|slang|colloquial|historical|poetic|dialect|law|medicine|sports|military|nautical|biology|chemistry)\b[^)]*)\)/i;
+
+  /**
+   * 뜻을 많이 쓰이는 순서로 정렬하고, 대표 뜻에 primary 표시를 단다.
+   * 기준은 Datamuse 가 돌려주는 순서(rank). 그 정보가 없으면 사전 원래 순서를 따른다.
+   */
+  function markPrimary(entry, posOrder) {
+    if (!entry || !entry.meanings || !entry.meanings.length) return entry;
+
+    // 1) 품사를 사용 빈도순으로
+    if (posOrder && posOrder.length) {
+      entry.meanings.sort(function (a, b) {
+        var ia = posOrder.indexOf(a.pos), ib = posOrder.indexOf(b.pos);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      });
+    }
+
+    // 2) 품사 안에서도 많이 쓰이는 뜻부터
+    entry.meanings.forEach(function (m) {
+      m.defs.forEach(function (d, i) {
+        if (typeof d.rank !== 'number') d.rank = 500 + i;   // 순위 정보가 없으면 뒤로
+        d.primary = false;
+      });
+      m.defs.sort(function (a, b) { return a.rank - b.rank; });
+    });
+
+    // 3) 대표 뜻 고르기 — 순위가 앞서고 꼬리표가 없는 뜻을 품사마다 하나씩, 최대 2개
+    var picked = 0;
+    entry.meanings.forEach(function (m) {
+      if (picked >= 2) return;
+      for (var i = 0; i < m.defs.length; i++) {
+        var d = m.defs[i];
+        if (NARROW.test(d.def)) continue;
+        if (d.rank >= 500 && picked > 0) break;   // 순위 정보가 없는 품사는 하나만
+        d.primary = true;
+        picked++;
+        break;
+      }
+    });
+    if (!picked) entry.meanings[0].defs[0].primary = true;
+
+    return entry;
+  }
+
+  /**
+   * 사전들을 모아 하나로 합친다.
+   * 주 사전(예문·발음이 풍부)에 Datamuse 를 더해 빠진 품사·뜻을 채우고 빈도 정보를 얻는다.
+   */
   function fetchAnySource(word) {
-    return fromDictionaryApi(word).then(function (a) {
-      if (a.entry) return a;
+    return Promise.all([
+      fromDictionaryApi(word),
+      fromDatamuse(word)
+    ]).then(function (rs) {
+      var a = rs[0], d = rs[1];
+
+      if (a.entry) {
+        var merged = mergeEntries(a.entry, d.entry);
+        return { entry: markPrimary(merged, d.posOrder) };
+      }
+
+      // 주 사전이 안 되면 Wiktionary 로
       return fromWiktionary(word).then(function (b) {
-        if (b.entry) return b;
-        return fromDatamuse(word).then(function (c) {
-          if (c.entry) return c;
-          // 세 곳 모두 "없음" 이면 진짜 없는 단어, 하나라도 통신 실패면 연결 문제
-          var failed = a.failed && (b.failed || c.failed);
-          return { notFound: !failed, failed: failed, err: a.err || b.err || c.err };
-        });
+        if (b.entry) {
+          var m2 = mergeEntries(b.entry, d.entry);
+          return { entry: markPrimary(m2, d.posOrder) };
+        }
+        if (d.entry) return { entry: markPrimary(d.entry, d.posOrder) };
+
+        var failed = a.failed && (b.failed || d.failed);
+        return { notFound: !failed, failed: failed, err: a.err || b.err || d.err };
       });
     });
   }

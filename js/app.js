@@ -105,8 +105,10 @@
       h += '<span class="pos-name">' + esc(m.pos) + (m.posKo ? ' · ' + esc(m.posKo) : '') + '</span>';
       m.defs.forEach(function (d, di) {
         h += '<div class="def-item"><div class="def-row">';
-        h += '<span class="def-num">' + (di + 1) + '</span>';
-        h += '<span class="def-text">' + esc(d.def) + '</span></div>';
+        h += '<span class="def-num' + (d.primary ? ' primary' : '') + '">' + (di + 1) + '</span>';
+        h += '<span class="def-text' + (d.primary ? ' primary' : '') + '">' + esc(d.def);
+        if (d.primary) h += '<span class="def-tag">자주 쓰임</span>';
+        h += '</span></div>';
         h += '<div class="def-ko" data-ko-slot="d' + mi + '-' + di + '">' +
              esc(defKo[d.def] || '') + '</div>';
         if (!defKo[d.def]) {

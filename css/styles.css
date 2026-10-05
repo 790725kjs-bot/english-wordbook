@@ -251,6 +251,22 @@ body {
   border-radius: 50%; font-size: 11px; font-weight: 700;
 }
 .def-text { flex: 1; font-size: 15px; line-height: 1.55; }
+
+/* 자주 쓰이는 뜻은 굵게 */
+.def-text.primary { font-weight: 700; color: var(--text); }
+.def-num.primary { background: var(--primary); color: #fff; }
+.def-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
 .def-ko { margin: 4px 0 0 27px; font-size: 14px; color: var(--text-2); }
 .def-ko:empty { display: none; }
 .example {
