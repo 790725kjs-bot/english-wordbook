@@ -655,6 +655,62 @@
   }
 
   /* ---------------------------------------------------------
+     단어의 한글 뜻 여러 개 — '내 뜻' 칸을 채울 때 쓴다.
+     번역기가 함께 주는 후보들에서 쓸 만한 것만 골라 모은다.
+     --------------------------------------------------------- */
+  function usefulKo(t) {
+    t = String(t || '').trim();
+    if (!t) return '';
+    if (!/[가-힣]/.test(t)) return '';   // 한글이 없으면 버림
+    if (/[A-Za-z]/.test(t)) return '';           // 로마자 표기 섞인 것 버림
+    if (t.length > 24) return '';                // 문장처럼 긴 것은 '내 뜻'에 맞지 않음
+    return t.replace(/[.。]\s*$/, '').trim();
+  }
+
+  /** 단어 하나의 한글 뜻 후보를 최대 max개 모아 "뜻1, 뜻2" 형태로 돌려준다 */
+  function translateWord(word, max) {
+    max = max || 3;
+    var src = String(word || '').trim();
+    if (!src) return Promise.resolve('');
+
+    var key = 'en|ko|multi|' + src.toLowerCase();
+    var hit = Store.getTrans(key);
+    if (hit) return Promise.resolve(hit);
+    if (!navigator.onLine) return Promise.resolve('');
+
+    var url = TRANS_URL + '?q=' + encodeURIComponent(src) + '&langpair=en|ko&de=vocab@app.local';
+    return fetch(url)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j) return '';
+        var out = [];
+        function add(t) {
+          var v = usefulKo(t);
+          if (!v) return;
+          for (var i = 0; i < out.length; i++) {
+            if (out[i] === v) return;
+            // 같은 말의 짧은/긴 형태가 겹치면 하나만 (추천 / 추천하다)
+            if (out[i].indexOf(v) === 0 || v.indexOf(out[i]) === 0) return;
+          }
+          if (out.length < max) out.push(v);
+        }
+
+        add(j.responseData && j.responseData.translatedText);
+        (j.matches || [])
+          .filter(function (m) {
+            return String(m.segment || '').trim().toLowerCase() === src.toLowerCase();
+          })
+          .sort(function (a, b) { return (b.quality || 0) - (a.quality || 0); })
+          .forEach(function (m) { add(m.translation); });
+
+        var text = out.join(', ');
+        if (text) Store.putTrans(key, text);
+        return text;
+      })
+      .catch(function () { return ''; });
+  }
+
+  /* ---------------------------------------------------------
      발음
      --------------------------------------------------------- */
   var audioEl = null;
@@ -760,6 +816,7 @@
     fetchWikiExamples: fetchWikiExamples,
     relatedForms: relatedForms,
     translate: translate,
+    translateWord: translateWord,
     speak: speak,
     speakP: speakP,
     stopSpeak: stopSpeak,

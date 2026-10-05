@@ -264,6 +264,60 @@
     });
   }
 
+  /**
+   * 화면에 그려진 카드의 영어 뜻풀이·예문 아래에 한글을 채워 넣는다.
+   * 찾기 결과도 단어장 상세와 똑같이 보이도록 하기 위한 것.
+   * 번역 한도를 생각해 뜻풀이 3개, 예문 2개까지만 받는다.
+   */
+  function fillKoreanSlots(rootSel, entry) {
+    if (!navigator.onLine || !entry || !entry.meanings) return;
+    if (!Store.settings().exampleTranslate) return;
+
+    var jobs = [];
+    var defLeft = 3, exLeft = 2;
+
+    entry.meanings.forEach(function (m, mi) {
+      m.defs.forEach(function (d, di) {
+        if (defLeft > 0) {
+          jobs.push({ text: d.def, slot: 'd' + mi + '-' + di, kind: 'def' });
+          defLeft--;
+        }
+        if (d.example && exLeft > 0) {
+          jobs.push({ text: d.example, slot: 'e' + mi + '-' + di, kind: 'ex' });
+          exLeft--;
+        }
+      });
+    });
+
+    jobs.forEach(function (job) {
+      var root = $(rootSel);
+      var slot = root && root.querySelector('[data-ko-slot="' + job.slot + '"]');
+      if (!slot || slot.textContent.trim()) return;
+
+      Api.translate(job.text).then(function (ko) {
+        if (!ko) return;
+        // 번역이 오는 사이 화면이 바뀌었을 수 있으니 다시 찾는다
+        var root2 = $(rootSel);
+        var slot2 = root2 && root2.querySelector('[data-ko-slot="' + job.slot + '"]');
+        if (!slot2 || slot2.textContent.trim()) return;
+        slot2.textContent = ko;
+
+        var btn = root2.querySelector('[data-act="trans"][data-slot="' + job.slot + '"]');
+        if (btn) btn.hidden = true;
+
+        // 저장된 단어면 다음에 또 받지 않도록 남겨 둔다
+        var host = slot2.closest('.entry');
+        var sw = host && Store.get(host.dataset.word);
+        if (sw) {
+          var bucket = job.kind === 'def' ? 'defKo' : 'exKo';
+          sw[bucket] = sw[bucket] || {};
+          sw[bucket][job.text] = ko;
+          Store.save();
+        }
+      });
+    });
+  }
+
   /** 예문 한 줄의 HTML (한글 뜻이 있으면 함께, 없으면 번역 버튼) */
   function exampleHtml(text, ko, slot) {
     var h = '<div class="example">';
@@ -408,6 +462,7 @@
       if (r.source && r.source !== 'Free Dictionary') notes.push(r.source + ' 사전에서 가져왔습니다.');
       setStatus(notes.join(' '));
       maybeAutoTranslate(parsed);
+      fillKoreanSlots('#searchResult', r.entry);   // 뜻풀이·예문의 한글도 함께
       renderRecent();
     });
   }
@@ -417,7 +472,7 @@
     if (!Store.settings().autoTranslate) return;
     var slot = $('#searchResult .mymean-text');
     if (!slot || slot.textContent.trim()) return;
-    Api.translate(parsed.word).then(function (ko) {
+    Api.translateWord(parsed.word).then(function (ko) {
       if (!ko) return;
       var el = $('#searchResult .mymean-text');
       if (el && !el.textContent.trim() && document.activeElement !== el) {
@@ -542,7 +597,7 @@
             meanings: r.entry.meanings, sourceUrl: r.entry.sourceUrl
           });
           if (!w.myMeaning && Store.settings().autoTranslate) {
-            return Api.translate(w.word).then(function (ko) {
+            return Api.translateWord(w.word).then(function (ko) {
               if (ko) Store.update(id, { myMeaning: ko });
             });
           }

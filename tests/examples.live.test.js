@@ -135,6 +135,34 @@ async function main() {
      (after.meanings || []).some(m => m.defs.some(d => d.example))));
   ok('한글 뜻 유지', !!(after.exKo && Object.keys(after.exKo).length));
 
+  console.log('\n[4-b] 찾기 화면에서도 한글이 함께 보이는가 (저장 전)');
+  click($$('.tab').find(t => t.dataset.view === 'search'));
+  $('#searchInput').value = 'recommend';
+  fire($('#searchInput'), 'input');
+  click($('#btnLookup'));
+  await waitFor(() => !!$('#searchResult .entry-word'), 20000);
+  ok('여러 품사 표시', $$('#searchResult .pos-block').length >= 2,
+     $$('#searchResult .pos-name').map(e => e.textContent));
+  ok('대표 뜻 굵게 표시', $$('#searchResult .def-text.primary').length >= 1);
+
+  const defFilled = await waitFor(() =>
+    $$('#searchResult .def-ko').filter(e => e.textContent.trim()).length > 0, 25000);
+  ok('뜻풀이 아래 한글 자동 표시', defFilled,
+     $$('#searchResult .def-ko').map(e => e.textContent));
+  if (defFilled) {
+    console.log('      ' + $$('#searchResult .def-ko').filter(e => e.textContent.trim())[0]
+      .textContent.slice(0, 60));
+  }
+  ok('번역된 뜻풀이는 버튼 숨김',
+     $$('#searchResult [data-act="trans"][data-kind="def"]').filter(b => !b.hidden).length
+       < $$('#searchResult .def-text').length);
+
+  const mine = await waitFor(() => ($('#searchResult .mymean-text').textContent || '').trim(), 25000);
+  ok('내 뜻 자동 입력', mine, $('#searchResult .mymean-text').textContent);
+  const mineTxt = $('#searchResult .mymean-text').textContent.trim();
+  ok('내 뜻에 여러 뜻 포함', mineTxt.indexOf(',') !== -1, mineTxt);
+  console.log('      내 뜻: ' + mineTxt);
+
   console.log('\n[5] 용례가 없는 단어는 관련 단어 예문으로 (resentful)');
   click($$('.tab').find(t => t.dataset.view === 'search'));
   $('#searchInput').value = 'resentful';
