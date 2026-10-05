@@ -4,8 +4,8 @@
    캐시 이름은 아빠 단어장과 겹치지 않게 'haram-' 으로 시작한다.
    ========================================================= */
 var PREFIX = 'haram-';
-var CACHE = PREFIX + 'v5';
-var V = '?v=16';            // index.html 의 버전 표기와 맞춘다
+var CACHE = PREFIX + 'v6';
+var V = '?v=17';            // index.html 의 버전 표기와 맞춘다
 var SHELL = [
   './',
   './index.html',

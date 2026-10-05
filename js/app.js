@@ -242,18 +242,22 @@
     // 예문이 하나도 없으면 Wiktionary 원문에서 보충하고,
     // 그래도 없으면 관련 단어(resentful -> resent)의 예문을 가져온다
     Api.fetchWikiExamples(w.word, 2).then(function (ex) {
-      if (ex && ex.length) return { list: ex, from: '' };
+      if (ex && ex.length) return { list: ex, from: '', checked: true };
+      var okSoFar = ex !== null;      // null 이면 통신 실패
 
       var rel = Api.relatedForms(w.word).slice(0, 2);
       function tryRel(i) {
-        if (i >= rel.length) return Promise.resolve({ list: [], from: '' });
+        if (i >= rel.length) return Promise.resolve({ list: [], from: '', checked: okSoFar });
         return Api.fetchWikiExamples(rel[i], 2).then(function (r) {
-          return (r && r.length) ? { list: r, from: rel[i] } : tryRel(i + 1);
+          if (r === null) okSoFar = false;
+          return (r && r.length) ? { list: r, from: rel[i], checked: true } : tryRel(i + 1);
         });
       }
       return tryRel(0);
     }).then(function (res) {
-      w.exTried = true;              // 없는 단어를 매번 다시 조회하지 않도록
+      // 실제로 찾아봤고 결과가 없을 때만 '없음' 으로 기록한다.
+      // 통신이 실패했을 뿐인데 없다고 단정하면 영영 다시 찾지 않는다.
+      if (res.checked) w.exTried = true;
       if (res.list.length) {
         w.examples = res.list;
         if (res.from) w.examplesFrom = res.from;
@@ -472,8 +476,13 @@
     if (!Store.settings().autoTranslate) return;
     var slot = $('#searchResult .mymean-text');
     if (!slot || slot.textContent.trim()) return;
-    Api.translateWord(parsed.word).then(function (ko) {
+    var posHint = (lastEntry && lastEntry.meanings && lastEntry.meanings[0] &&
+                   lastEntry.meanings[0].pos) || '';
+    Api.translateWord(parsed.word, 4, posHint).then(function (ko) {
       if (!ko) return;
+      // 번역이 오는 사이 다른 단어를 찾았을 수 있다. 같은 단어일 때만 채운다.
+      var shown = $('#searchResult .entry');
+      if (!shown || Store.normId(shown.dataset.word) !== Store.normId(parsed.word)) return;
       var el = $('#searchResult .mymean-text');
       if (el && !el.textContent.trim() && document.activeElement !== el) {
         el.textContent = ko;
@@ -597,7 +606,8 @@
             meanings: r.entry.meanings, sourceUrl: r.entry.sourceUrl
           });
           if (!w.myMeaning && Store.settings().autoTranslate) {
-            return Api.translateWord(w.word).then(function (ko) {
+            var ph = (w.meanings && w.meanings[0] && w.meanings[0].pos) || '';
+            return Api.translateWord(w.word, 4, ph).then(function (ko) {
               if (ko) Store.update(id, { myMeaning: ko });
             });
           }

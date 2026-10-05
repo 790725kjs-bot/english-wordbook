@@ -323,14 +323,35 @@
     return true;
   }
 
+  /** 같은 문서를 여러 번 받지 않도록 위키 원문을 잠시 보관한다 */
+  var wtCache = {};
+
+  function getWikitext(page) {
+    var key = String(page).toLowerCase();
+    if (wtCache[key]) return wtCache[key];
+
+    var url = WIKT_API + '?action=parse&page=' + encodeURIComponent(String(page).replace(/ /g, '_')) +
+              '&prop=wikitext&format=json&formatversion=2&origin=*';
+    var p = fetchJson(url, 8000)
+      .then(function (r) {
+        return (r.json && r.json.parse && r.json.parse.wikitext) || '';
+      })
+      .catch(function () { return ''; })
+      .then(function (wt) {
+        // 못 받아온 결과는 기억해 두지 않는다. (한 번 실패했다고 계속 비어 보이면 안 된다)
+        if (!wt) delete wtCache[key];
+        return wt;
+      });
+
+    wtCache[key] = p;
+    return p;
+  }
+
   function fetchWikiExamples(word, max) {
     max = max || 3;
-    var url = WIKT_API + '?action=parse&page=' + encodeURIComponent(word.replace(/ /g, '_')) +
-              '&prop=wikitext&format=json&formatversion=2&origin=*';
 
-    return fetchJson(url, 8000).then(function (r) {
-      var wt = r.json && r.json.parse && r.json.parse.wikitext;
-      if (!wt) return [];
+    return getWikitext(word).then(function (wt) {
+      if (!wt) return null;        // 받아오지 못함 (없는 것과 구분)
       // 영어 섹션만 사용
       var i = wt.indexOf('==English==');
       if (i !== -1) {
@@ -362,7 +383,7 @@
         return sentenceScore(a) - sentenceScore(b) || a.length - b.length;
       });
       return out.slice(0, max);
-    }).catch(function () { return []; });
+    }).catch(function () { return null; });
   }
 
   /**
@@ -658,7 +679,25 @@
      단어의 한글 뜻 여러 개 — '내 뜻' 칸을 채울 때 쓴다.
      번역기가 함께 주는 후보들에서 쓸 만한 것만 골라 모은다.
      --------------------------------------------------------- */
+  /**
+   * 번역기가 돌려준 말을 사전에 실리는 꼴로 다듬는다.
+   * (번창하세요 → 번창하다, 좋습니다 → 좋다, 탄력적입니다 → 탄력적)
+   */
+  function koDictForm(t) {
+    t = String(t || '').trim().replace(/[.!?]+$/, '').trim();
+    var rules = [
+      [/하세요$/, '하다'], [/하십시오$/, '하다'], [/해요$/, '하다'],
+      [/합니다$/, '하다'], [/됩니다$/, '되다'], [/입니다$/, ''],
+      [/있습니다$/, '있다'], [/없습니다$/, '없다'], [/습니다$/, '다']
+    ];
+    for (var i = 0; i < rules.length; i++) {
+      if (rules[i][0].test(t)) { t = t.replace(rules[i][0], rules[i][1]); break; }
+    }
+    return t.trim();
+  }
+
   function usefulKo(t) {
+    t = koDictForm(t);
     t = String(t || '').trim();
     if (!t) return '';
     if (!/[가-힣]/.test(t)) return '';   // 한글이 없으면 버림
@@ -667,9 +706,60 @@
     return t.replace(/[.。]\s*$/, '').trim();
   }
 
+  /**
+   * Wiktionary 의 '번역' 절에서 한국어 대응어를 뽑는다.
+   * 번역표가 큰 단어는 하위 문서(<단어>/translations)에 들어 있어 그쪽도 본다.
+   */
+  function koFromWiktionary(word) {
+    function extract(wt) {
+      if (!wt) return [];
+      var out = [];
+      var re = /\{\{t{1,2}\+?(?:-check)?\|ko\|([^}|]+)/g;
+      var m;
+      while ((m = re.exec(wt)) !== null) {
+        var t = String(m[1])
+          .replace(/\([^)]*\)/g, '')     // 책(冊) -> 책, 예약(豫約)하다 -> 예약하다
+          .replace(/\[\[|\]\]/g, '')
+          .trim();
+        if (t && out.indexOf(t) === -1) out.push(t);
+      }
+      return out;
+    }
+
+    return getWikitext(word).then(function (wt) {
+      var found = extract(wt);
+      // 번역표가 하위 문서로 빠져 있으면 그쪽도 확인
+      if (wt && /\{\{trans-see|\/translations/.test(wt)) {
+        return getWikitext(word + '/translations').then(function (wt2) {
+          extract(wt2).forEach(function (t) { if (found.indexOf(t) === -1) found.push(t); });
+          return found;
+        });
+      }
+      if (!found.length) {
+        return getWikitext(word + '/translations').then(function (wt2) {
+          return extract(wt2);
+        });
+      }
+      return found;
+    }).catch(function () { return []; });
+  }
+
   /** 단어 하나의 한글 뜻 후보를 최대 max개 모아 "뜻1, 뜻2" 형태로 돌려준다 */
-  function translateWord(word, max) {
-    max = max || 3;
+  function askMyMemory(text) {
+    var url = TRANS_URL + '?q=' + encodeURIComponent(text) + '&langpair=en|ko&de=vocab@app.local';
+    return fetch(url)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; });
+  }
+
+  /**
+   * @param {string} word 영어 단어
+   * @param {number} [max] 최대 개수
+   * @param {string} [pos] 품사 — 알고 있으면 더 자연스러운 번역을 얻는 데 쓴다
+   *        (thrive → "to thrive" → 번창하다 / subtle → "it is subtle" → 미묘하다)
+   */
+  function translateWord(word, max, pos) {
+    max = max || 4;
     var src = String(word || '').trim();
     if (!src) return Promise.resolve('');
 
@@ -678,36 +768,55 @@
     if (hit) return Promise.resolve(hit);
     if (!navigator.onLine) return Promise.resolve('');
 
-    var url = TRANS_URL + '?q=' + encodeURIComponent(src) + '&langpair=en|ko&de=vocab@app.local';
-    return fetch(url)
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) {
-        if (!j) return '';
-        var out = [];
-        function add(t) {
-          var v = usefulKo(t);
-          if (!v) return;
-          for (var i = 0; i < out.length; i++) {
-            if (out[i] === v) return;
-            // 같은 말의 짧은/긴 형태가 겹치면 하나만 (추천 / 추천하다)
-            if (out[i].indexOf(v) === 0 || v.indexOf(out[i]) === 0) return;
-          }
-          if (out.length < max) out.push(v);
-        }
+    return Promise.all([askMyMemory(src), koFromWiktionary(src)]).then(function (rs) {
+      var j = rs[0], wikiKo = rs[1] || [];
+      var out = [];
 
-        add(j.responseData && j.responseData.translatedText);
-        (j.matches || [])
+      function add(t) {
+        var v = usefulKo(t);
+        if (!v) return;
+        for (var i = 0; i < out.length; i++) {
+          if (out[i] === v) return;
+          // 같은 말의 짧은/긴 형태가 겹치면 더 사전다운 긴 쪽을 남긴다 (추천 → 추천하다)
+          if (out[i].indexOf(v) === 0) return;
+          if (v.indexOf(out[i]) === 0) { out[i] = v; return; }
+        }
+        if (out.length < max) out.push(v);
+      }
+
+      // ① 번역기가 고른 대표 뜻
+      add(j && j.responseData && j.responseData.translatedText);
+      // ② 위키낱말사전의 한국어 대응어 (사전이 정리한 것이라 품질이 좋다)
+      wikiKo.forEach(add);
+      // ③ 번역기의 나머지 후보
+      if (j && j.matches) {
+        j.matches
           .filter(function (m) {
             return String(m.segment || '').trim().toLowerCase() === src.toLowerCase();
           })
           .sort(function (a, b) { return (b.quality || 0) - (a.quality || 0); })
           .forEach(function (m) { add(m.translation); });
+      }
 
+      // 뜻이 빈약하면 품사에 맞는 표현으로 한 번 더 물어본다
+      var phrase = '';
+      if (out.length < 3 && pos) {
+        if (pos === 'verb') phrase = 'to ' + src;
+        else if (pos === 'adjective') phrase = 'it is ' + src;
+      }
+      if (!phrase) return finish();
+
+      return askMyMemory(phrase).then(function (j2) {
+        add(j2 && j2.responseData && j2.responseData.translatedText);
+        return finish();
+      });
+
+      function finish() {
         var text = out.join(', ');
         if (text) Store.putTrans(key, text);
         return text;
-      })
-      .catch(function () { return ''; });
+      }
+    }).catch(function () { return ''; });
   }
 
   /* ---------------------------------------------------------
@@ -817,6 +926,7 @@
     relatedForms: relatedForms,
     translate: translate,
     translateWord: translateWord,
+    koFromWiktionary: koFromWiktionary,
     speak: speak,
     speakP: speakP,
     stopSpeak: stopSpeak,
