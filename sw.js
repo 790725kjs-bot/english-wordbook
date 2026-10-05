@@ -4,8 +4,8 @@
    사전/번역 API: 캐시하지 않음 (앱이 결과를 직접 저장한다)
    ========================================================= */
 var PREFIX = 'engvoc-';          // 이 앱이 쓰는 캐시 이름 앞머리
-var CACHE = PREFIX + 'v14';   // 파일이 바뀌면 숫자를 올린다 (옛 캐시 자동 폐기)
-var V = '?v=14';            // index.html 의 버전 표기와 맞춘다
+var CACHE = PREFIX + 'v15';   // 파일이 바뀌면 숫자를 올린다 (옛 캐시 자동 폐기)
+var V = '?v=15';            // index.html 의 버전 표기와 맞춘다
 var SHELL = [
   './',
   './index.html',
@@ -53,8 +53,14 @@ self.addEventListener('fetch', function (e) {
 
   // 네트워크 우선: 온라인이면 항상 최신 파일을 쓰고, 받은 것을 캐시에 넣어 둔다.
   // 오프라인일 때만 캐시를 꺼내 쓴다. (캐시 우선으로 두면 수정한 파일이 반영되지 않는다)
+  // 페이지(HTML)는 항상 서버에 최신인지 물어본다.
+  // GitHub Pages 가 10분 캐시를 지시하므로, 이게 없으면 고친 내용이 늦게 반영된다.
+  var request = (req.mode === 'navigate')
+    ? new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' })
+    : req;
+
   e.respondWith(
-    fetch(req).then(function (res) {
+    fetch(request).then(function (res) {
       if (res && res.ok) {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put(req, copy); });

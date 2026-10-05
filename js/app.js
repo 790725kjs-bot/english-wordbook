@@ -1108,8 +1108,17 @@
 
   /* ================= 설정 ================= */
 
+  /** 지금 실행 중인 앱 버전 (script 태그의 ?v= 값에서 읽는다) */
+  function appVersion() {
+    var el = document.querySelector('script[src*="app.js"]');
+    var m = el && el.src.match(/[?&]v=([^&]+)/);
+    return m ? m[1] : '?';
+  }
+
   function fillSettings() {
     var s = Store.settings();
+    var ver = $('#appVersion');
+    if (ver) ver.textContent = 'v' + appVersion();
     $('#setFastMs').value = s.fastMs;
     $('#setFastMsVal').textContent = (s.fastMs / 1000).toFixed(1) + '초';
     $('#setStreak').value = s.targetStreak;
@@ -1455,6 +1464,10 @@
       renderFavList();
     });
     $('#btnFillKo').addEventListener('click', fillAllKorean);
+    $('#btnHardRefresh').addEventListener('click', function () {
+      toast('최신 버전을 받는 중…');
+      location.replace(location.pathname + '?fresh');   // 서비스워커·캐시를 비우고 다시 로드
+    });
     $('#btnLoadPack').addEventListener('click', loadPack);
     $('#btnLoadPack2').addEventListener('click', loadPack);
     $('#btnLoadPackEmpty').addEventListener('click', loadPack);
