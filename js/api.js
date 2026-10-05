@@ -492,6 +492,7 @@
     });
     if (!picked) entry.meanings[0].defs[0].primary = true;
 
+    entry.schema = Store.ENTRY_SCHEMA;   // 이 형식으로 만들어졌음을 표시
     return entry;
   }
 
@@ -536,15 +537,19 @@
 
     // 저장된 단어 / 캐시 우선
     if (!opts.force) {
+      // 형식이 옛것이면 다시 받아 온다. (앱을 고쳐도 옛 결과가 계속 보이는 것을 막는다)
       var saved = Store.get(q);
-      if (saved && saved.meanings && saved.meanings.length) {
+      if (saved && saved.meanings && saved.meanings.length &&
+          (saved.schema === Store.ENTRY_SCHEMA || !navigator.onLine)) {
         return Promise.resolve({ ok: true, cached: true, entry: {
           word: saved.word, phonetic: saved.phonetic, audio: saved.audio,
-          meanings: saved.meanings, sourceUrl: saved.sourceUrl
+          meanings: saved.meanings, sourceUrl: saved.sourceUrl, schema: saved.schema
         } });
       }
       var cached = Store.getCache(q);
-      if (cached) return Promise.resolve({ ok: true, cached: true, entry: cached });
+      if (cached && (cached.schema === Store.ENTRY_SCHEMA || !navigator.onLine)) {
+        return Promise.resolve({ ok: true, cached: true, entry: cached });
+      }
     }
 
     if (!navigator.onLine) {

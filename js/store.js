@@ -32,6 +32,15 @@
 
   var DEFAULT_FOLDER = '기본';
 
+  /**
+   * 사전 결과의 형식 버전.
+   * 뜻을 담는 방식이 바뀌면 이 숫자를 올린다. 예전 형식으로 저장해 둔 결과는
+   * 캐시에서 무시하고 다시 받아오므로, 앱을 고쳐도 옛 결과가 계속 보이지 않는다.
+   *   1: 사전 한 곳의 결과
+   *   2: 여러 사전을 합치고 빈도순 정렬 + 대표 뜻 표시
+   */
+  var ENTRY_SCHEMA = 2;
+
   var state = null;
   var saveTimer = null;
 
@@ -150,6 +159,7 @@
     w.phonetic = entry.phonetic || w.phonetic || '';
     w.audio = entry.audio || w.audio || '';
     w.meanings = entry.meanings || w.meanings || [];
+    if (entry.meanings && entry.meanings.length) w.schema = entry.schema || ENTRY_SCHEMA;
     w.sourceUrl = entry.sourceUrl || w.sourceUrl || '';
     if (myMeaning && !w.myMeaning) w.myMeaning = myMeaning;
     if (state.order.indexOf(id) === -1) state.order.push(id);
@@ -318,7 +328,8 @@
   /** 사전 정보가 아직 없는 단어들의 id 목록 (백그라운드 보강용) */
   function needsDetail() {
     return favorites().filter(function (w) {
-      return !w.meanings || !w.meanings.length;
+      if (!w.meanings || !w.meanings.length) return true;
+      return w.schema !== ENTRY_SCHEMA;        // 옛 형식이면 다시 받아 뜻을 보강한다
     }).map(function (w) { return w.id; });
   }
 
@@ -476,6 +487,7 @@
     needsDetail: needsDetail,
     exportCsv: exportCsv,
     DEFAULT_FOLDER: DEFAULT_FOLDER,
+    ENTRY_SCHEMA: ENTRY_SCHEMA,
     putCache: putCache,
     getCache: getCache,
     pushRecent: pushRecent,
