@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="css/styles.css?v=18">
+<link rel="stylesheet" href="css/styles.css?v=19">
 </head>
 <body>
 
@@ -240,10 +240,14 @@
 
       <div id="syncOff">
         <ol class="howto">
-          <li><a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">GitHub 토큰 발급 페이지</a>를 엽니다</li>
-          <li><b>Generate new token</b> → 이름은 아무거나, 기간은 <b>No expiration</b></li>
-          <li><b>Account permissions</b> 에서 <b>Gists</b> 를 <b>Read and write</b> 로</li>
-          <li>만들어진 <b>ghp_… / github_pat_…</b> 값을 아래에 붙여넣기</li>
+          <li><a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=English%20Wordbook%20Sync"
+                 target="_blank" rel="noopener">이 링크로 토큰 만들기</a>
+              — 필요한 권한(<b>gist</b>)이 이미 체크되어 열립니다</li>
+          <li><b>Expiration</b> 을 <b>No expiration</b> 으로 바꿉니다
+              (안 바꾸면 30일 뒤 동기화가 멈춥니다)</li>
+          <li>맨 아래 초록색 <b>Generate token</b> 누르기</li>
+          <li>화면에 뜬 <b>ghp_…</b> 를 복사해 아래에 붙여넣기
+              <br>— 이 값은 <b>그 화면에서만</b> 보입니다. 페이지를 떠나면 다시 못 봅니다</li>
         </ol>
         <input id="syncToken" type="password" class="filter-input" placeholder="토큰 붙여넣기"
                autocomplete="off" autocapitalize="none" spellcheck="false">
@@ -325,10 +329,10 @@
   <button class="tab" data-view="settings"><span class="tab-icon">⚙</span><span>설정</span></button>
 </nav>
 
-<script src="js/store.js?v=18"></script>
-<script src="js/api.js?v=18"></script>
-<script src="js/review.js?v=18"></script>
-<script src="js/sync.js?v=18"></script>
-<script src="js/app.js?v=18"></script>
+<script src="js/store.js?v=19"></script>
+<script src="js/api.js?v=19"></script>
+<script src="js/review.js?v=19"></script>
+<script src="js/sync.js?v=19"></script>
+<script src="js/app.js?v=19"></script>
 </body>
 </html>
