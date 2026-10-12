@@ -167,6 +167,7 @@
     g.totalAnswers++;
     if (fast) g.fastAnswers++;
 
+    Store.touch(id);          // 기기 간 합칠 때 최신 기록이 남도록
     Store.save();
 
     return {

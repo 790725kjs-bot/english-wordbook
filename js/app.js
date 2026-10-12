@@ -1180,7 +1180,50 @@
     return m ? m[1] : '?';
   }
 
+  /* ================= 기기 간 동기화 ================= */
+
+  function agoText(ts) {
+    if (!ts) return '아직 없음';
+    var s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return '방금';
+    if (s < 3600) return Math.floor(s / 60) + '분 전';
+    if (s < 86400) return Math.floor(s / 3600) + '시간 전';
+    return Math.floor(s / 86400) + '일 전';
+  }
+
+  function renderSync() {
+    if (!global.Sync || !$('#syncOff')) return;
+    var st = Sync.status();
+    $('#syncOff').hidden = st.on;
+    $('#syncOn').hidden = !st.on;
+    if (st.on) $('#syncState').textContent = '연결됨 · 마지막 ' + agoText(st.lastSync);
+    var msg = $('#syncMsg');
+    msg.textContent = st.lastError ? ('문제: ' + st.lastError) : '';
+    msg.style.color = st.lastError ? 'var(--danger)' : '';
+  }
+
+  function doSync(manual) {
+    if (!global.Sync || !Sync.isOn()) return;
+    var btn = $('#btnSyncNow');
+    if (btn) { btn.disabled = true; btn.textContent = '동기화 중…'; }
+
+    Sync.run().then(function (r) {
+      if (btn) { btn.disabled = false; btn.textContent = '지금 동기화'; }
+      renderSync();
+      if (r.ok) {
+        renderFavList();
+        renderReviewIntro();
+        var n = (r.added || 0) + (r.updated || 0);
+        if (manual) toast(n ? ('동기화 완료 · 받은 단어 ' + (r.added || 0) + '개') : '동기화 완료 · 변경 없음');
+        else if (n) toast('다른 기기의 단어 ' + n + '개를 받았습니다');
+      } else if (manual) {
+        toast(r.error || '동기화 실패');
+      }
+    });
+  }
+
   function fillSettings() {
+    renderSync();
     var s = Store.settings();
     var ver = $('#appVersion');
     if (ver) ver.textContent = 'v' + appVersion();
@@ -1529,6 +1572,30 @@
       renderFavList();
     });
     $('#btnFillKo').addEventListener('click', fillAllKorean);
+
+    // 동기화
+    if (global.Sync) {
+      $('#btnSyncConnect').addEventListener('click', function () {
+        var t = $('#syncToken').value.trim();
+        var btn = this;
+        btn.disabled = true; btn.textContent = '확인 중…';
+        Sync.connect(t).then(function (r) {
+          btn.disabled = false; btn.textContent = '연결하기';
+          if (!r.ok) { $('#syncMsg').textContent = r.error; $('#syncMsg').style.color = 'var(--danger)'; return; }
+          $('#syncToken').value = '';
+          renderSync();
+          toast('연결했습니다. 첫 동기화를 시작합니다');
+          doSync(true);
+        });
+      });
+      $('#btnSyncNow').addEventListener('click', function () { doSync(true); });
+      $('#btnSyncOff').addEventListener('click', function () {
+        if (!confirm('이 기기에서 동기화를 끊을까요? 단어는 그대로 남습니다.')) return;
+        Sync.disconnect();
+        renderSync();
+        toast('연결을 해제했습니다');
+      });
+    }
     $('#btnHardRefresh').addEventListener('click', function () {
       toast('최신 버전을 받는 중…');
       location.replace(location.pathname + '?fresh');   // 서비스워커·캐시를 비우고 다시 로드
@@ -1647,14 +1714,22 @@
     global.addEventListener('online', function () {
       updateNetBadge();
       enrich();
+      if (global.Sync && Sync.isOn()) setTimeout(function () { doSync(false); }, 1500);
       setTimeout(function () { startFill(false); }, 3000);
     });
     global.addEventListener('offline', updateNetBadge);
     global.addEventListener('pagehide', function () { Api.stopSpeak(); Store.saveNow(); });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && global.Sync && Sync.isOn()) doSync(false);
+    });
+    setInterval(function () { if (global.Sync && Sync.isOn()) doSync(false); }, 5 * 60 * 1000);
 
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
       navigator.serviceWorker.register('sw.js').catch(function () { /* 무시 */ });
     }
+
+    // 다른 기기에서 담은 단어를 먼저 받아 온다
+    if (global.Sync && Sync.isOn()) setTimeout(function () { doSync(false); }, 1200);
 
     // 시작 후 잠시 뒤, 사전 정보가 빈 단어를 조용히 채운다
     setTimeout(enrich, 2500);

@@ -50,6 +50,7 @@
       words: {},      // id -> word object
       order: [],      // 즐겨찾기 추가 순서 (별표 켜진 단어)
       archive: [],    // 보관함 — 별표를 껐지만 받아 둔 자료와 기록은 그대로 남긴다
+      graveyard: [],  // 지운 단어의 흔적 [{id, at}] — 동기화 때 되살아나지 않도록
       queue: [],      // 암기 출제 순서
       folders: [DEFAULT_FOLDER],
       recent: [],     // 최근 검색어 (문자열)
@@ -72,7 +73,7 @@
       state.settings = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
       // 무결성 보정
       if (!state.words || typeof state.words !== 'object') state.words = {};
-      ['order', 'archive', 'queue', 'recent', 'cacheOrder', 'transOrder', 'folders'].forEach(function (k) {
+      ['order', 'archive', 'queue', 'recent', 'cacheOrder', 'transOrder', 'folders', 'graveyard'].forEach(function (k) {
         if (!Array.isArray(state[k])) state[k] = [];
       });
       if (state.folders.indexOf(DEFAULT_FOLDER) === -1) state.folders.unshift(DEFAULT_FOLDER);
@@ -133,6 +134,13 @@
 
   function get(id) { return state.words[normId(id)] || null; }
 
+  /** 이 단어를 방금 고쳤다고 기록한다 (기기 간 합칠 때 최신본을 고르는 기준) */
+  function touch(id) {
+    var w = state.words[normId(id)];
+    if (w) w.updatedAt = Date.now();
+    return w;
+  }
+
   function isFav(id) { return state.order.indexOf(normId(id)) !== -1; }
 
   /**
@@ -164,8 +172,16 @@
     if (myMeaning && !w.myMeaning) w.myMeaning = myMeaning;
     if (state.order.indexOf(id) === -1) state.order.push(id);
     if (state.queue.indexOf(id) === -1) state.queue.splice(0, 0, id); // 새 단어는 앞쪽에
+    w.updatedAt = Date.now();
+    dropTombstone(id);
     save();
     return w;
+  }
+
+  function dropTombstone(id) {
+    for (var i = state.graveyard.length - 1; i >= 0; i--) {
+      if (state.graveyard[i].id === id) state.graveyard.splice(i, 1);
+    }
   }
 
   /** 완전 삭제 — 받아 둔 자료와 기록까지 모두 지운다 */
@@ -176,6 +192,9 @@
       if (i !== -1) arr.splice(i, 1);
     });
     delete state.words[id];
+    dropTombstone(id);
+    state.graveyard.push({ id: id, at: Date.now() });   // 다른 기기에서 되살아나지 않도록
+    if (state.graveyard.length > 500) state.graveyard.splice(0, state.graveyard.length - 500);
     save();
   }
 
@@ -193,6 +212,7 @@
     if (q !== -1) state.queue.splice(q, 1);
     if (state.archive.indexOf(id) === -1) state.archive.unshift(id);
     w.archivedAt = Date.now();
+    w.updatedAt = Date.now();
     save();
   }
 
@@ -215,6 +235,7 @@
     }
     if (state.queue.indexOf(id) === -1) state.queue.unshift(id);
     delete w.archivedAt;
+    w.updatedAt = Date.now();
     save();
   }
 
@@ -231,6 +252,7 @@
     var w = get(id);
     if (!w) return null;
     Object.assign(w, patch);
+    w.updatedAt = Date.now();
     save();
     return w;
   }
@@ -286,6 +308,7 @@
     var w = get(id);
     if (!w) return;
     w.folder = addFolder(folder) || DEFAULT_FOLDER;
+    w.updatedAt = Date.now();
     save();
   }
 
@@ -428,6 +451,8 @@
       if (!state.words[id]) {
         w.stats = Object.assign(newStats(), w.stats || {});
         state.words[id] = w;
+        state.words[id].updatedAt = Date.now();
+        dropTombstone(id);
         state.order.push(id);
         state.queue.push(id);
         added++;
@@ -445,6 +470,120 @@
     if (data.settings) state.settings = Object.assign({}, state.settings, data.settings);
     saveNow();
     return added;
+  }
+
+  /* ------------------------- 기기 간 합치기 ------------------------- */
+
+  /** 동기화용 묶음 — 설정처럼 기기마다 다른 값은 넣지 않는다 */
+  function syncPayload() {
+    return {
+      v: 1,
+      words: state.words,
+      order: state.order,
+      archive: state.archive,
+      folders: state.folders,
+      graveyard: state.graveyard,
+      savedAt: Date.now()
+    };
+  }
+
+  /**
+   * 다른 기기의 단어장을 현재 단어장과 합친다.
+   * 같은 단어는 '마지막으로 고친 쪽'을 따르고, 지운 단어는 되살리지 않는다.
+   * @returns {{added:number, updated:number, removed:number}}
+   */
+  function mergeRemote(remote) {
+    if (!remote || !remote.words) return { added: 0, updated: 0, removed: 0 };
+
+    var added = 0, updated = 0, removed = 0;
+
+    // 1) 삭제 기록을 합치고, 그에 따라 지워진 단어를 반영한다
+    (remote.graveyard || []).forEach(function (t) {
+      if (!t || !t.id) return;
+      var mine = null;
+      state.graveyard.forEach(function (g) { if (g.id === t.id) mine = g; });
+      if (!mine) state.graveyard.push(t);
+      else if (t.at > mine.at) mine.at = t.at;
+    });
+
+    function deletedAt(id) {
+      var at = 0;
+      state.graveyard.forEach(function (g) { if (g.id === id && g.at > at) at = g.at; });
+      return at;
+    }
+
+    // 2) 단어 합치기
+    Object.keys(remote.words).forEach(function (id) {
+      var rw = remote.words[id];
+      if (!rw || !rw.word) return;
+      var mine = state.words[id];
+      var rAt = rw.updatedAt || rw.addedAt || 0;
+
+      if (deletedAt(id) > rAt) return;          // 더 나중에 지운 단어는 되살리지 않는다
+
+      if (!mine) {
+        state.words[id] = rw;
+        added++;
+      } else {
+        var mAt = mine.updatedAt || mine.addedAt || 0;
+        if (rAt > mAt) {
+          // 받아 둔 사전 자료는 둘 중 있는 쪽을 살린다
+          if ((!rw.meanings || !rw.meanings.length) && mine.meanings && mine.meanings.length) {
+            rw.meanings = mine.meanings;
+            rw.schema = mine.schema;
+          }
+          rw.defKo = Object.assign({}, mine.defKo || {}, rw.defKo || {});
+          rw.exKo = Object.assign({}, mine.exKo || {}, rw.exKo || {});
+          if (!rw.examples && mine.examples) rw.examples = mine.examples;
+          state.words[id] = rw;
+          updated++;
+        } else {
+          // 내 것이 최신이어도, 상대가 더 채워 놓은 번역은 받아 둔다
+          mine.defKo = Object.assign({}, rw.defKo || {}, mine.defKo || {});
+          mine.exKo = Object.assign({}, rw.exKo || {}, mine.exKo || {});
+          if ((!mine.meanings || !mine.meanings.length) && rw.meanings && rw.meanings.length) {
+            mine.meanings = rw.meanings;
+            mine.schema = rw.schema;
+          }
+        }
+      }
+    });
+
+    // 3) 내 쪽에서 지운 단어 정리
+    state.graveyard.forEach(function (g) {
+      var w = state.words[g.id];
+      if (w && (w.updatedAt || w.addedAt || 0) < g.at) {
+        delete state.words[g.id];
+        removed++;
+      }
+    });
+
+    // 4) 목록을 다시 세운다 — 추가한 순서(addedAt)와 보관 순서(archivedAt) 기준
+    (remote.folders || []).forEach(addFolder);
+
+    var ids = Object.keys(state.words);
+    var act = [], arc = [];
+    ids.forEach(function (id) {
+      var w = state.words[id];
+      if (w.archivedAt) arc.push(id); else act.push(id);
+    });
+    // 시각이 같을 때는 이름순으로 — 기기마다 순서가 달라지지 않도록
+    act.sort(function (a, b) {
+      return (state.words[a].addedAt || 0) - (state.words[b].addedAt || 0) || a.localeCompare(b);
+    });
+    arc.sort(function (a, b) {
+      return (state.words[a].archivedAt || 0) - (state.words[b].archivedAt || 0) || a.localeCompare(b);
+    });
+    state.order = act;
+    state.archive = arc;
+
+    // 출제 대기열: 기존 순서를 지키고 새 단어는 앞에 둔다
+    var oldQueue = state.queue.filter(function (id) { return act.indexOf(id) !== -1; });
+    var fresh = act.filter(function (id) { return oldQueue.indexOf(id) === -1; });
+    state.queue = fresh.concat(oldQueue);
+
+    saveNow();
+    return { added: added, updated: updated, removed: removed };
   }
 
   function resetStats() {
@@ -488,6 +627,10 @@
     exportCsv: exportCsv,
     DEFAULT_FOLDER: DEFAULT_FOLDER,
     ENTRY_SCHEMA: ENTRY_SCHEMA,
+    touch: touch,
+    syncPayload: syncPayload,
+    mergeRemote: mergeRemote,
+    profile: function () { return global.APP_PROFILE || 'main'; },
     putCache: putCache,
     getCache: getCache,
     pushRecent: pushRecent,

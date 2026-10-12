@@ -4,8 +4,8 @@
    사전/번역 API: 캐시하지 않음 (앱이 결과를 직접 저장한다)
    ========================================================= */
 var PREFIX = 'engvoc-';          // 이 앱이 쓰는 캐시 이름 앞머리
-var CACHE = PREFIX + 'v17';   // 파일이 바뀌면 숫자를 올린다 (옛 캐시 자동 폐기)
-var V = '?v=17';            // index.html 의 버전 표기와 맞춘다
+var CACHE = PREFIX + 'v18';   // 파일이 바뀌면 숫자를 올린다 (옛 캐시 자동 폐기)
+var V = '?v=18';            // index.html 의 버전 표기와 맞춘다
 var SHELL = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ var SHELL = [
   './js/store.js' + V,
   './js/api.js' + V,
   './js/review.js' + V,
+  './js/sync.js' + V,
   './js/app.js' + V,
   './js/pack.js',
   './manifest.webmanifest',

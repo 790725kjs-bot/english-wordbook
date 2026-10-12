@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="css/styles.css?v=17">
+<link rel="stylesheet" href="css/styles.css?v=18">
 </head>
 <body>
 
@@ -232,6 +232,43 @@
     </div>
 
     <div class="setting-group">
+      <h3 class="section-title">기기 간 동기화</h3>
+      <p class="hint" id="syncIntro">
+        태블릿·휴대폰·PC 가 같은 단어장을 쓰도록 연결합니다.
+        회원님 GitHub 계정의 <b>비공개 저장 공간</b>에 단어장을 두고 기기들이 주고받습니다.
+      </p>
+
+      <div id="syncOff">
+        <ol class="howto">
+          <li><a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">GitHub 토큰 발급 페이지</a>를 엽니다</li>
+          <li><b>Generate new token</b> → 이름은 아무거나, 기간은 <b>No expiration</b></li>
+          <li><b>Account permissions</b> 에서 <b>Gists</b> 를 <b>Read and write</b> 로</li>
+          <li>만들어진 <b>ghp_… / github_pat_…</b> 값을 아래에 붙여넣기</li>
+        </ol>
+        <input id="syncToken" type="password" class="filter-input" placeholder="토큰 붙여넣기"
+               autocomplete="off" autocapitalize="none" spellcheck="false">
+        <div class="btn-row">
+          <button id="btnSyncConnect" class="btn btn-primary">연결하기</button>
+        </div>
+      </div>
+
+      <div id="syncOn" hidden>
+        <div class="setting-row">
+          <span>상태</span>
+          <span class="setting-ctl"><b id="syncState">연결됨</b></span>
+        </div>
+        <div class="btn-row">
+          <button id="btnSyncNow" class="btn btn-primary">지금 동기화</button>
+          <button id="btnSyncOff" class="btn btn-ghost">연결 해제</button>
+        </div>
+      </div>
+
+      <p class="hint" id="syncMsg"></p>
+      <p class="hint">토큰은 이 기기에만 저장되고 백업 파일에는 들어가지 않습니다.
+        다른 기기에서도 같은 토큰을 한 번씩 넣어 주세요.</p>
+    </div>
+
+    <div class="setting-group">
       <h3 class="section-title">백업</h3>
       <p class="hint">브라우저 저장소를 지우면 단어장도 사라집니다. 가끔 파일로 내보내 두세요.</p>
       <div class="btn-row">
@@ -288,9 +325,10 @@
   <button class="tab" data-view="settings"><span class="tab-icon">⚙</span><span>설정</span></button>
 </nav>
 
-<script src="js/store.js?v=17"></script>
-<script src="js/api.js?v=17"></script>
-<script src="js/review.js?v=17"></script>
-<script src="js/app.js?v=17"></script>
+<script src="js/store.js?v=18"></script>
+<script src="js/api.js?v=18"></script>
+<script src="js/review.js?v=18"></script>
+<script src="js/sync.js?v=18"></script>
+<script src="js/app.js?v=18"></script>
 </body>
 </html>

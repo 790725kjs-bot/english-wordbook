@@ -370,6 +370,16 @@ body {
   line-height: 1.45;
 }
 
+.howto {
+  margin: 10px 0 12px;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.7;
+}
+.howto a { color: var(--primary); font-weight: 700; }
+.howto b { color: var(--text); }
+
 .empty { text-align: center; color: var(--text-3); padding: 40px 20px; }
 .empty-icon { font-size: 40px; margin: 0 0 8px; color: var(--border); }
 .empty-sub { font-size: 13px; margin-top: 4px; }
