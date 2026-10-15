@@ -917,6 +917,69 @@
   }
 
   /* ---------------------------------------------------------
+     한글 → 영어 — 한글로 검색했을 때 쓸 영어 단어 후보를 찾는다
+     --------------------------------------------------------- */
+  function cleanEnCandidate(t) {
+    t = String(t || '').trim().toLowerCase()
+      .replace(/^(to|a|an|the)\s+/, '')      // to recommend → recommend
+      .replace(/[.,!?;:"']+$/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!/^[a-z][a-z' -]{1,28}$/.test(t)) return '';
+    if (t.split(' ').length > 2) return '';            // 문장은 단어 후보가 아니다
+    if (/^(i|you|he|she|it|we|they|this|that|there)\b/.test(t)) return '';
+    return t;
+  }
+
+  /**
+   * @param {string} korean 한글 단어
+   * @param {number} [max] 후보 개수
+   * @returns {Promise<string[]>} 영어 단어 후보 (좋은 것부터)
+   */
+  function translateToEnglish(korean, max) {
+    max = max || 4;
+    var src = String(korean || '').trim();
+    if (!src) return Promise.resolve([]);
+
+    var key = 'ko|en|' + src;
+    var hit = Store.getTrans(key);
+    if (hit) return Promise.resolve(hit.split('|'));
+    if (!navigator.onLine) return Promise.resolve([]);
+
+    var url = TRANS_URL + '?q=' + encodeURIComponent(src) + '&langpair=ko|en&de=vocab@app.local';
+    return fetch(url)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j) return [];
+        var out = [];
+        function add(t) {
+          var v = cleanEnCandidate(t);
+          if (v && out.indexOf(v) === -1) out.push(v);
+        }
+        add(j.responseData && j.responseData.translatedText);
+        (j.matches || [])
+          .sort(function (a, b) { return (b.quality || 0) - (a.quality || 0); })
+          .forEach(function (m) { add(m.translation); });
+
+        // 한 단어짜리를 앞에 (여러 단어는 번역기가 덧붙인 설명인 경우가 많다)
+        out.sort(function (a, b) {
+          return a.split(' ').length - b.split(' ').length;
+        });
+        // 이미 고른 단어에 수식어만 붙인 것은 뺀다 (resilience / magic resilience)
+        out = out.filter(function (t, i) {
+          for (var k = 0; k < i; k++) {
+            if (t.split(' ').indexOf(out[k]) !== -1) return false;
+          }
+          return true;
+        });
+        out = out.slice(0, max);
+        if (out.length) Store.putTrans(key, out.join('|'));
+        return out;
+      })
+      .catch(function () { return []; });
+  }
+
+  /* ---------------------------------------------------------
      발음
      --------------------------------------------------------- */
   var audioEl = null;
@@ -1025,6 +1088,7 @@
     relatedForms: relatedForms,
     translate: translate,
     translateWord: translateWord,
+    translateToEnglish: translateToEnglish,
     koFromWiktionary: koFromWiktionary,
     speak: speak,
     speakP: speakP,

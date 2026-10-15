@@ -450,8 +450,13 @@
     var raw = rawText != null ? rawText : $('#searchInput').value;
     var parsed = Api.parseInput(raw);
 
+    // 한글만 넣었으면 영어로 바꿔서 찾아 준다
+    if (!parsed.word && parsed.ko) {
+      lookupFromKorean(parsed.ko);
+      return;
+    }
     if (!parsed.word) {
-      setStatus('영어 단어를 찾지 못했습니다. 영어를 포함해 붙여넣어 주세요.', true);
+      setStatus('영어 단어나 한글 뜻을 입력해 주세요.', true);
       return;
     }
     pendingMeaning = parsed.ko || '';
@@ -476,6 +481,45 @@
       maybeAutoTranslate(parsed);
       fillKoreanSlots('#searchResult', r.entry);   // 뜻풀이·예문의 한글도 함께
       renderRecent();
+    });
+  }
+
+  /**
+   * 한글로 검색했을 때 — 영어 단어로 바꿔서 찾고,
+   * 다른 후보들은 눌러서 바꿔 볼 수 있게 보여 준다.
+   */
+  function lookupFromKorean(korean) {
+    if (!navigator.onLine) {
+      setStatus('한글로 찾으려면 인터넷 연결이 필요합니다.', true);
+      return;
+    }
+    $('#searchResult').innerHTML = '';
+    setStatus('"' + korean + '" 에 해당하는 영어 단어를 찾는 중…');
+
+    Api.translateToEnglish(korean, 4).then(function (cands) {
+      if (!cands.length) {
+        setStatus('"' + korean + '" 에 해당하는 영어 단어를 찾지 못했습니다.', true);
+        return;
+      }
+      var word = cands[0];
+      pendingMeaning = korean;          // 입력한 한글을 그대로 '내 뜻' 으로
+
+      Api.lookup(word).then(function (r) {
+        if (!r.ok) {
+          lastEntry = { word: word, phonetic: '', audio: '', meanings: [], sourceUrl: '' };
+          $('#searchResult').innerHTML = entryHtml(lastEntry, {});
+          setStatus(r.error, true, cands.slice(1));
+          return;
+        }
+        lastEntry = r.entry;
+        Store.pushRecent(r.entry.word);
+        $('#searchResult').innerHTML = entryHtml(r.entry, {});
+        setStatus('"' + korean + '" → ' + r.entry.word +
+                  (cands.length > 1 ? ' · 다른 후보도 눌러 보세요' : ''),
+                  false, cands.slice(1));
+        fillKoreanSlots('#searchResult', r.entry);
+        renderRecent();
+      });
     });
   }
 
