@@ -170,7 +170,21 @@
   /* ---------------------------------------------------------
      공통 fetch — 응답이 없으면 매달려 있지 않도록 시간 제한을 둔다
      --------------------------------------------------------- */
-  function fetchJson(url, timeoutMs) {
+  function wait(ms) {
+    return new Promise(function (res) { setTimeout(res, ms); });
+  }
+
+  /**
+   * @param {string} url
+   * @param {number} [timeoutMs]
+   * @param {number} [attempt] 재시도 횟수 (내부용)
+   *
+   * 사전 서버가 "요청이 몰린다"(429)거나 잠시 점검 중(503)이라고 답하면
+   * 조금 기다렸다 다시 시도한다. 한 번 실패했다고 빈 결과로 넘기면
+   * 발음기호나 예문이 이유 없이 비어 보인다.
+   */
+  function fetchJson(url, timeoutMs, attempt) {
+    attempt = attempt || 0;
     var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, timeoutMs || 7000);
     var opts = { headers: { 'Accept': 'application/json' } };
@@ -179,6 +193,14 @@
     return fetch(url, opts).then(function (res) {
       clearTimeout(timer);
       if (res.status === 404) return { notFound: true };
+      if ((res.status === 429 || res.status === 503) && attempt < 2) {
+        // 서버가 알려 주는 대기 시간을 따르되, 화면이 오래 멈추지 않도록 3초까지만
+        var ra = parseFloat(res.headers.get('retry-after') || '0');
+        var delay = Math.min(ra > 0 ? ra * 1000 : 700 * (attempt + 1), 3000);
+        return wait(delay).then(function () {
+          return fetchJson(url, timeoutMs, attempt + 1);
+        });
+      }
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json().then(function (j) { return { json: j }; });
     }).catch(function (err) {
@@ -717,6 +739,22 @@
    * 주 사전이 발음기호를 주지 않거나 서버가 멈췄을 때를 대비한 것.
    * /슬래시/ 로 적힌 표준형을 우선하고, 없으면 [대괄호] 표기를 쓴다.
    */
+  /**
+   * 발음기호를 학습자 사전(옥스퍼드·캠브리지 등)에서 쓰는 표기로 다듬는다.
+   * Wiktionary 는 음성학적으로 더 정밀한 기호를 쓰는데, 눈에 설고 글꼴에 따라
+   * 깨져 보이기도 한다. 소리는 같으므로 익숙한 글자로 바꿔 준다.
+   *   ɹ(뒤집힌 r) → r,  ɡ(외다리 g) → g,  ɫ(어두운 l) → l
+   *   음절 표시 기호(l̩ 아래의 작은 선 등)는 지운다
+   */
+  function prettyIPA(s) {
+    return String(s || '')
+      .replace(/ɹ|ɻ|ʀ|ʁ/g, 'r')   // ɹ ɻ ʀ ʁ
+      .replace(/ɡ/g, 'g')                        // ɡ
+      .replace(/ɫ|ɬ|ʟ/g, 'l')          // ɫ ɬ ʟ
+      .replace(/[̩̯̍͜͡]/g, '') // 음절·결합 표시
+      .trim();
+  }
+
   function fetchPhonetic(word) {
     return getWikitext(word).then(function (wt) {
       if (!wt) return '';
@@ -735,7 +773,33 @@
         if (/^\/.+\/$/.test(t)) { if (slashed.indexOf(t) === -1) slashed.push(t); }
         else if (/^\[.+\]$/.test(t)) { if (bracketed.indexOf(t) === -1) bracketed.push(t); }
       }
-      return slashed[0] || bracketed[0] || '';
+      return prettyIPA(slashed[0] || bracketed[0] || '');
+    }).then(function (ipa) {
+      // 원문 주소가 "요청이 몰린다"며 막힐 때가 있다. 그때는 다른 주소로 한 번 더.
+      return ipa || phoneticFromHtml(word);
+    }).catch(function () { return phoneticFromHtml(word); });
+  }
+
+  /** 예비 경로 — 렌더링된 문서에서 발음기호를 뽑는다 (용량이 커서 평소엔 쓰지 않음) */
+  function phoneticFromHtml(word) {
+    var url = 'https://en.wiktionary.org/api/rest_v1/page/html/' +
+              encodeURIComponent(String(word).replace(/ /g, '_'));
+    return fetch(url).then(function (r) {
+      if (!r.ok) return '';
+      return r.text();
+    }).then(function (html) {
+      if (!html) return '';
+      var en = html.indexOf('English');
+      var body = en > 0 ? html.slice(en) : html;
+      var re = /<span[^>]*class="[^"]*\bIPA\b[^"]*"[^>]*>([^<]{2,40})<\/span>/g;
+      var m, slashed = '', bracketed = '';
+      while ((m = re.exec(body)) !== null) {
+        var t = m[1].trim();
+        if (!slashed && /^\/.+\/$/.test(t)) slashed = t;
+        else if (!bracketed && /^\[.+\]$/.test(t)) bracketed = t;
+        if (slashed) break;
+      }
+      return prettyIPA(slashed || bracketed || '');
     }).catch(function () { return ''; });
   }
 
@@ -957,6 +1021,7 @@
     suggestSpelling: suggestSpelling,
     fetchWikiExamples: fetchWikiExamples,
     fetchPhonetic: fetchPhonetic,
+    prettyIPA: prettyIPA,
     relatedForms: relatedForms,
     translate: translate,
     translateWord: translateWord,

@@ -73,7 +73,7 @@
 
     h += '<div class="entry-head"><div class="entry-head-main">';
     h += '<h2 class="entry-word">' + w + '</h2>';
-    if (entry.phonetic) h += '<div class="entry-phonetic">' + esc(entry.phonetic) + '</div>';
+    if (entry.phonetic) h += '<div class="entry-phonetic">' + esc(Api.prettyIPA(entry.phonetic)) + '</div>';
     h += '</div><div class="entry-actions">';
     h += '<button class="icon-btn" data-act="speak" data-text="' + w + '" data-audio="' +
          esc(entry.audio || '') + '" aria-label="발음 듣기">🔊</button>';
@@ -196,6 +196,13 @@
     if (!navigator.onLine) { if (done) done(false); return; }
 
     var changed = false;
+
+    // 발음기호를 아직 못 받았으면 조용히 채운다 (사전 서버가 막혔던 경우 등)
+    if (!w.phonetic) {
+      Api.fetchPhonetic(w.word).then(function (ipa) {
+        if (ipa && !w.phonetic) { w.phonetic = ipa; Store.save(); }
+      });
+    }
 
     /** 영어 뜻풀이와 예문을 한글로 옮겨 저장한다 */
     function translateThem() {
@@ -352,7 +359,8 @@
       });
       var needEx = !allExamples(w).length && !w.exTried;
       var needExKo = allExamples(w).slice(0, 2).some(function (t) { return !(w.exKo && w.exKo[t]); });
-      return needDef || needEx || needExKo;
+      var needPhonetic = !w.phonetic;        // 받다가 놓친 발음기호도 다시 시도
+      return needDef || needEx || needExKo || needPhonetic;
     });
   }
 
@@ -404,7 +412,7 @@
       setFillStatus('채우는 중… ' + fillJob.i + ' / ' + fillJob.list.length + '  (' + w.word + ')');
       ensureExamples(w.id, function (changed) {
         if (changed) fillJob.updated++;
-        setTimeout(step, fillJob.manual ? 250 : 1500);   // 자동일 때는 천천히
+        setTimeout(step, fillJob.manual ? 600 : 2500);   // 사전 서버에 부담을 주지 않도록
       });
     })();
 
@@ -945,7 +953,7 @@
     h += '<h2 class="card-word">' + esc(w.word) + '</h2>';
     h += '<button class="icon-btn speak" data-act="speak" data-text="' + esc(w.word) +
          '" data-audio="' + esc(w.audio || '') + '">🔊</button></div>';
-    h += '<div class="card-phonetic">' + esc(w.phonetic || '') + '</div>';
+    h += '<div class="card-phonetic">' + esc(Api.prettyIPA(w.phonetic || '')) + '</div>';
     h += '<div class="streak-row">' + streakLine(w) + '</div>';
     h += '<div class="card-answer" id="flashAnswer" hidden></div></div>';
     h += '<div class="review-actions"><button class="btn btn-primary btn-lg" data-act="reveal">뜻 보기</button></div>';
@@ -982,7 +990,7 @@
     h += '<h2 class="card-word">' + esc(w.word) + '</h2>';
     h += '<button class="icon-btn speak" data-act="speak" data-text="' + esc(w.word) +
          '" data-audio="' + esc(w.audio || '') + '">🔊</button></div>';
-    h += '<div class="card-phonetic">' + esc(w.phonetic || '') + '</div>';
+    h += '<div class="card-phonetic">' + esc(Api.prettyIPA(w.phonetic || '')) + '</div>';
     h += '<div class="streak-row">' + streakLine(w) + '</div></div>';
     h += '<div class="mcq-list">';
     opts.forEach(function (o, i2) {
@@ -1099,7 +1107,7 @@
     });
     var h = '<div class="card listen-card">';
     h += '<div class="listen-word">' + esc(w.word) + '</div>';
-    h += '<div class="card-phonetic">' + esc(w.phonetic || '') + '</div>';
+    h += '<div class="card-phonetic">' + esc(Api.prettyIPA(w.phonetic || '')) + '</div>';
     h += '<div class="listen-ko">' + esc(Review.meaningLabel(w) || '') + '</div>';
     if (ex) h += '<div class="listen-ex">' + esc(ex) + '</div>';
     h += '</div>';
@@ -1740,6 +1748,9 @@
   }
 
   global.App = {
+    // 테스트에서 내부 동작을 확인하기 위한 통로
+    __needsKo: function () { return wordsNeedingKorean().map(function (w) { return w.id; }); },
+    __ensure: function (id) { ensureExamples(id); },
     toast: toast,
     setView: setView,
     refresh: function () { renderFavList(); renderReviewIntro(); }
