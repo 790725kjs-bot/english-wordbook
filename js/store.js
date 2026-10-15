@@ -38,8 +38,9 @@
    * 캐시에서 무시하고 다시 받아오므로, 앱을 고쳐도 옛 결과가 계속 보이지 않는다.
    *   1: 사전 한 곳의 결과
    *   2: 여러 사전을 합치고 빈도순 정렬 + 대표 뜻 표시
+   *   3: 발음기호(IPA) 포함
    */
-  var ENTRY_SCHEMA = 2;
+  var ENTRY_SCHEMA = 3;
 
   var state = null;
   var saveTimer = null;

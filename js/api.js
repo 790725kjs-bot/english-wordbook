@@ -524,22 +524,28 @@
   function fetchAnySource(word) {
     return Promise.all([
       fromDictionaryApi(word),
-      fromDatamuse(word)
+      fromDatamuse(word),
+      fetchPhonetic(word)          // 발음기호는 어느 사전을 쓰든 함께 붙인다
     ]).then(function (rs) {
-      var a = rs[0], d = rs[1];
+      var a = rs[0], d = rs[1], ipa = rs[2];
+
+      function done(entry) {
+        if (entry && !entry.phonetic && ipa) entry.phonetic = ipa;
+        return { entry: entry };
+      }
 
       if (a.entry) {
         var merged = mergeEntries(a.entry, d.entry);
-        return { entry: markPrimary(merged, d.posOrder) };
+        return done(markPrimary(merged, d.posOrder));
       }
 
       // 주 사전이 안 되면 Wiktionary 로
       return fromWiktionary(word).then(function (b) {
         if (b.entry) {
           var m2 = mergeEntries(b.entry, d.entry);
-          return { entry: markPrimary(m2, d.posOrder) };
+          return done(markPrimary(m2, d.posOrder));
         }
-        if (d.entry) return { entry: markPrimary(d.entry, d.posOrder) };
+        if (d.entry) return done(markPrimary(d.entry, d.posOrder));
 
         var failed = a.failed && (b.failed || d.failed);
         return { notFound: !failed, failed: failed, err: a.err || b.err || d.err };
@@ -704,6 +710,33 @@
     if (/[A-Za-z]/.test(t)) return '';           // 로마자 표기 섞인 것 버림
     if (t.length > 24) return '';                // 문장처럼 긴 것은 '내 뜻'에 맞지 않음
     return t.replace(/[.。]\s*$/, '').trim();
+  }
+
+  /**
+   * 발음기호(IPA)를 Wiktionary 원문에서 뽑는다.
+   * 주 사전이 발음기호를 주지 않거나 서버가 멈췄을 때를 대비한 것.
+   * /슬래시/ 로 적힌 표준형을 우선하고, 없으면 [대괄호] 표기를 쓴다.
+   */
+  function fetchPhonetic(word) {
+    return getWikitext(word).then(function (wt) {
+      if (!wt) return '';
+      var i = wt.indexOf('==English==');
+      if (i !== -1) {
+        var rest = wt.slice(i + 11);
+        var next = rest.search(/\n==[^=]/);
+        wt = next === -1 ? rest : rest.slice(0, next);
+      }
+
+      var slashed = [], bracketed = [];
+      var m, re = /\{\{IPA\|en\|([^}|]+)/g;
+      while ((m = re.exec(wt)) !== null) {
+        var t = String(m[1]).trim();
+        if (!t || t.length > 40) continue;
+        if (/^\/.+\/$/.test(t)) { if (slashed.indexOf(t) === -1) slashed.push(t); }
+        else if (/^\[.+\]$/.test(t)) { if (bracketed.indexOf(t) === -1) bracketed.push(t); }
+      }
+      return slashed[0] || bracketed[0] || '';
+    }).catch(function () { return ''; });
   }
 
   /**
@@ -923,6 +956,7 @@
     lookup: lookup,
     suggestSpelling: suggestSpelling,
     fetchWikiExamples: fetchWikiExamples,
+    fetchPhonetic: fetchPhonetic,
     relatedForms: relatedForms,
     translate: translate,
     translateWord: translateWord,
